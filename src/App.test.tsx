@@ -90,11 +90,11 @@ describe('TIMUDS workspace', () => {
   it('loads the circle in a silent state without creating audio', () => {
     render(<App />);
     expect(
-      screen.getByRole('heading', { level: 1, name: /Hear position/i }),
+      screen.getByRole('heading', { level: 1, name: /Listen around/i }),
     ).toBeInTheDocument();
     expect(screen.getByText('Circle · preset')).toBeInTheDocument();
     expect(
-      screen.getAllByText(/Silent — audio has not been enabled/).length,
+      screen.getAllByText(/Silent\. Audio has not started/).length,
     ).toBeGreaterThan(0);
     expect(MockAudioContext.constructions).toBe(0);
   });
@@ -134,12 +134,12 @@ describe('TIMUDS workspace', () => {
     expect(screen.getAllByText(/^Playing$/).length).toBeGreaterThan(0);
     await user.click(screen.getByRole('button', { name: /Hold$/ }));
     expect(
-      screen.getAllByText(/Holding position with sound sustained/).length,
+      screen.getAllByText(/Holding at current point/).length,
     ).toBeGreaterThan(0);
     await user.click(screen.getAllByRole('button', { name: /Stop sound/ })[0]!);
-    expect(
-      screen.getAllByText(/Stopped at position — audio off/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Stopped\. Audio off/).length).toBeGreaterThan(
+      0,
+    );
     await user.click(screen.getByRole('button', { name: /Reset to start/ }));
     expect(screen.getByText('0.0%')).toBeInTheDocument();
   });
@@ -156,9 +156,9 @@ describe('TIMUDS workspace', () => {
     await user.keyboard('{ArrowRight}');
     expect(screen.getByText('1.0%')).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(
-      screen.getAllByText(/Stopped at position — audio off/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Stopped\. Audio off/).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('updates visible coordinate and pitch data after a manual move', async () => {
@@ -181,7 +181,9 @@ describe('TIMUDS workspace', () => {
       value: undefined,
     });
     render(<App />);
-    expect(screen.getByText(/Web Audio is unavailable/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/This browser has no Web Audio support/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^▶ Play$/ })).toBeDisabled();
     expect(
       screen.getByRole('img', { name: 'Ordered two-dimensional curve' }),

@@ -99,11 +99,11 @@ test('loads the default circle silently and production assets are relative', asy
   page,
 }) => {
   await expect(
-    page.getByRole('heading', { level: 1, name: /Hear position/ }),
+    page.getByRole('heading', { level: 1, name: /Listen around/ }),
   ).toBeVisible();
   await expect(page.getByText('Circle · preset')).toBeVisible();
   await expect(
-    page.getByText(/Silent — audio has not been enabled/).first(),
+    page.getByText(/Silent\. Audio has not started/).first(),
   ).toBeVisible();
   await expect(page.locator('svg[role="img"] path.curve-line')).toHaveAttribute(
     'd',
@@ -125,7 +125,7 @@ test('starts two-voice playback, holds, and moves manually in both directions', 
   await expect(page.getByText(/^Playing$/).first()).toBeVisible();
   await page.getByRole('button', { name: /Hold$/ }).click();
   await expect(
-    page.getByText(/Holding position with sound sustained/).first(),
+    page.getByText(/Holding at current point/).first(),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Home' }).click();
   await page.getByRole('button', { name: '+5%' }).click();
@@ -190,12 +190,10 @@ test('changes mapping and operates transport with keyboard', async ({
   await expect(page.getByText(/^Playing$/).first()).toBeVisible();
   await page.keyboard.press('Space');
   await expect(
-    page.getByText(/Holding position with sound sustained/).first(),
+    page.getByText(/Holding at current point/).first(),
   ).toBeVisible();
   await page.keyboard.press('Shift+ArrowRight');
   await expect(page.getByText(/5\.\d%/).first()).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(
-    page.getByText(/Stopped at position — audio off/).first(),
-  ).toBeVisible();
+  await expect(page.getByText(/Stopped\. Audio off/).first()).toBeVisible();
 });

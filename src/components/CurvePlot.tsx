@@ -187,8 +187,8 @@ export const CurvePlot = forwardRef<CurvePlotHandle, CurvePlotProps>(
         >
           <title>Ordered two-dimensional curve</title>
           <desc>
-            The complete curve, labelled mathematical axes, start marker and
-            current interpolated position. Numeric details follow the plot.
+            The plot shows the curve, its start point and the current listening
+            point. The numeric readout follows it.
           </desc>
           <defs aria-hidden="true">
             <pattern
@@ -261,8 +261,8 @@ export const CurvePlot = forwardRef<CurvePlotHandle, CurvePlotProps>(
         </svg>
         <p id="plot-instructions" className="plot-caption">
           {drawing
-            ? 'Drawing domain: x −1 to 1 and y −1 to 1. Drag with a pointer, pen or touch; use text or file import for a keyboard-only alternative.'
-            : `Square marks the supplied start; outlined circle marks the current point. Direction: ${reverse ? 'reverse' : 'forward'}.`}
+            ? 'Drawing domain: x −1 to 1 and y −1 to 1. Draw with a pointer, pen or touch. Coordinates can also be entered as text or loaded from a file.'
+            : `The square is the start point. The outlined circle is the listening point. Direction: ${reverse ? 'reverse' : 'forward'}.`}
         </p>
       </div>
     );

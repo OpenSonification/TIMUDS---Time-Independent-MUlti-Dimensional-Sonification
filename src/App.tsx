@@ -129,7 +129,7 @@ export function App() {
   const [centreVoices, setCentreVoices] = useState(false);
   const [masterVolume, setMasterVolume] = useState(0.18);
   const [announcement, setAnnouncement] = useState(
-    'Audio is off. Press Play or a calibration control to enable it.',
+    'Audio is off. Press Play or choose a calibration sound.',
   );
   const [periodicAnnouncements, setPeriodicAnnouncements] = useState(false);
   const [format, setFormat] = useState<CoordinateFormat>('auto');
@@ -283,7 +283,7 @@ export function App() {
       }
       if (result.completed) {
         dispatch({ type: 'COMPLETE' });
-        setAnnouncement('Traversal complete. Holding the final coordinate.');
+        setAnnouncement('Playback finished. The final point is sounding.');
         return;
       }
       frameId = requestAnimationFrame(animate);
@@ -316,7 +316,7 @@ export function App() {
         engine.fadeOut();
         dispatch({ type: 'STOP' });
         setAnnouncement(
-          'Playback paused and sound stopped because the page was hidden. Your position was retained.',
+          'The page was hidden, so playback stopped at the current point.',
         );
       }
     };
@@ -385,14 +385,12 @@ export function App() {
       lastAnnouncementBandRef.current = Math.floor(start * 4);
       engine.startSound(audioFrame);
       dispatch({ type: 'PLAY' });
-      setAnnouncement(
-        'Audio enabled. Playback started with X and Y sounding together.',
-      );
+      setAnnouncement('Playing the X and Y voices.');
     } catch {
       engine.fadeOut();
       dispatch({ type: 'ERROR' });
       setAnnouncement(
-        'Audio could not be started. Visual and numeric inspection remain available.',
+        'Audio failed to start. The curve and readout are still available.',
       );
     }
   }
@@ -401,14 +399,10 @@ export function App() {
     if (transport.status !== 'playing') return;
     dispatch({ type: 'SEEK', progress: progressRef.current });
     dispatch({ type: 'HOLD' });
-    setAnnouncement(
-      'Movement held. Both voices sustain the current coordinate.',
-    );
+    setAnnouncement('Held at the current point.');
   }
 
-  function stopSound(
-    message = 'Sound stopped. Current position retained.',
-  ): void {
+  function stopSound(message = 'Sound stopped at the current point.'): void {
     engine.fadeOut();
     dispatch({ type: 'SEEK', progress: progressRef.current });
     dispatch({ type: 'STOP' });
@@ -429,7 +423,7 @@ export function App() {
         geometry,
       ),
     );
-    setAnnouncement('Traversal reset to its starting position. Audio is off.');
+    setAnnouncement('Back at the start. Audio is off.');
   }
 
   function applyCurve(next: CurveData): void {
@@ -442,7 +436,7 @@ export function App() {
     dispatch({ type: 'RESET' });
     setImportError('');
     setAnnouncement(
-      `${next.name} loaded with ${next.points.length.toLocaleString('en-GB')} points. Audio remains off.`,
+      `${next.name} loaded: ${next.points.length.toLocaleString('en-GB')} points. Audio is off.`,
     );
   }
 
@@ -560,7 +554,7 @@ export function App() {
       });
       dispatch({ type: 'STOP' });
       setAnnouncement(
-        `${key === 'both' ? 'Both voices' : `${key.toUpperCase()} voice`} calibration sound playing briefly.`,
+        `${key === 'both' ? 'Both voices' : `${key.toUpperCase()} voice`} playing for calibration.`,
       );
       previewTimerRef.current = window.setTimeout(() => {
         engine.fadeOut();
@@ -601,9 +595,7 @@ export function App() {
   function workspaceKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
     if (event.key === 'Escape') {
       event.preventDefault();
-      stopSound(
-        'Sound stopped immediately with Escape. Current position retained.',
-      );
+      stopSound('Escape stopped the sound at the current point.');
       return;
     }
     const target = event.target as HTMLElement;
@@ -634,10 +626,10 @@ export function App() {
   }
 
   const stateLabel: Record<TransportState['status'], string> = {
-    silent: 'Silent — audio has not been enabled',
+    silent: 'Silent. Audio has not started.',
     playing: 'Playing',
-    holding: 'Holding position with sound sustained',
-    stopped: 'Stopped at position — audio off',
+    holding: 'Holding at current point',
+    stopped: 'Stopped. Audio off.',
     unavailable: 'Audio unavailable',
     error: 'Audio error',
   };
@@ -658,7 +650,8 @@ export function App() {
               />
               <circle cx="33" cy="15" r="4" />
             </svg>
-            <span>TIMUDS</span>
+            <span className="brand-name">TIMUDS</span>
+            <small>2D sonification instrument</small>
           </a>
           <nav aria-label="Page sections">
             <a href="#curve-source">Curve</a>
@@ -671,28 +664,88 @@ export function App() {
 
       <main id="main-content">
         <section className="hero" id="top" aria-labelledby="page-title">
-          <p className="eyebrow">
-            Time-Independent Multidimensional Sonification
-          </p>
-          <h1 id="page-title">Hear position, not just progression.</h1>
-          <p className="hero-copy">
-            TIMUDS plays an ordered two-dimensional curve with one sustained
-            synthetic voice for X and another for Y.
-            <strong>
-              {' '}
-              X and Y are played together. Movement along the curve is
-              controlled separately.
-            </strong>
-          </p>
-          <div className="notice" role="note">
-            <span className="notice-icon" aria-hidden="true">
-              i
-            </span>
-            <p>
-              Audio never starts automatically. This is exploratory research
-              software, not validated assistive technology or scientific
-              instrumentation.
-            </p>
+          <div className="hero-grid">
+            <div className="hero-intro">
+              <p className="eyebrow">Two-dimensional curve sonification</p>
+              <h1 id="page-title">
+                <span>Listen around</span>
+                <span>the curve.</span>
+              </h1>
+              <p className="hero-copy">
+                At each point, the x value sets one pitch and the y value sets
+                another. Playback follows the points in the order supplied.
+              </p>
+              <p className="hero-principle">
+                <span>X sets one voice. Y sets the other.</span>
+                <span>The clock advances through the point list.</span>
+              </p>
+              <div className="notice" role="note">
+                <span className="notice-icon" aria-hidden="true">
+                  i
+                </span>
+                <p>
+                  Sound starts when you press Play or a calibration button.
+                  TIMUDS is an experimental prototype.
+                </p>
+              </div>
+            </div>
+            <figure className="hero-diagram">
+              <svg viewBox="0 0 560 440" role="img">
+                <title>Two-axis sonification signal diagram</title>
+                <desc>
+                  A point on a circular curve sends its horizontal position to
+                  an X voice and its vertical position to a Y voice. Both voices
+                  sound at the same time.
+                </desc>
+                <g className="diagram-grid" aria-hidden="true">
+                  <path d="M40 40H360M40 100H360M40 160H360M40 220H360M40 280H360M40 340H360" />
+                  <path d="M40 40V340M104 40V340M168 40V340M232 40V340M296 40V340M360 40V340" />
+                </g>
+                <g className="diagram-axes" aria-hidden="true">
+                  <path d="M40 190H360M200 40V340" />
+                  <text x="345" y="181">
+                    X
+                  </text>
+                  <text x="210" y="56">
+                    Y
+                  </text>
+                </g>
+                <path
+                  className="diagram-curve"
+                  d="M319 190c0 67-53 122-119 122S81 257 81 190 134 68 200 68s119 55 119 122Z"
+                  aria-hidden="true"
+                />
+                <g className="diagram-position" aria-hidden="true">
+                  <path d="M281 101V374M281 101H426" />
+                  <circle cx="281" cy="101" r="9" />
+                  <rect x="252" y="362" width="58" height="25" />
+                  <text x="281" y="380" textAnchor="middle">
+                    +0.68
+                  </text>
+                  <rect x="414" y="88" width="58" height="25" />
+                  <text x="443" y="106" textAnchor="middle">
+                    +0.73
+                  </text>
+                </g>
+                <g className="diagram-signal" aria-hidden="true">
+                  <path d="M38 408c18-28 36 28 54 0s36 28 54 0 36 28 54 0 36 28 54 0 36 28 54 0" />
+                  <path d="M500 52c-25 14 25 28 0 42s25 28 0 42-25 28 0 42 25 28 0 42-25 28 0 42" />
+                  <text x="40" y="385">
+                    X VOICE / WARM
+                  </text>
+                  <text x="486" y="330" transform="rotate(-90 486 330)">
+                    Y VOICE / REED
+                  </text>
+                </g>
+                <text className="diagram-output" x="396" y="408">
+                  SIMULTANEOUS OUTPUT
+                </text>
+              </svg>
+              <figcaption>
+                <span>Point shown: x +0.68, y +0.73</span>
+                <span>Both voices sound at once</span>
+              </figcaption>
+            </figure>
           </div>
         </section>
 
@@ -704,8 +757,8 @@ export function App() {
         >
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Sonification workspace</p>
-              <h2 id="workspace-title">Explore the current curve</h2>
+              <p className="eyebrow">Instrument panel</p>
+              <h2 id="workspace-title">Current curve</h2>
             </div>
             <button
               type="button"
@@ -718,9 +771,8 @@ export function App() {
           </div>
           {!audioAvailable && (
             <div className="warning" role="status">
-              Web Audio is unavailable in this browser. Curve import, drawing,
-              visualisation, mapping and numeric inspection still work; audio
-              controls are disabled.
+              This browser has no Web Audio support. You can still load, draw
+              and inspect curves.
             </div>
           )}
           <p className="sr-only" aria-live="polite" aria-atomic="true">
@@ -814,8 +866,8 @@ export function App() {
                 </div>
               </dl>
               <p className="mapping-note">
-                Signed values are mapped independently. Volume is for listening
-                comfort, not data encoding.
+                Pitch follows the signed value on each axis. Gain changes the
+                listening level.
               </p>
             </aside>
           </div>
@@ -886,10 +938,7 @@ export function App() {
               </div>
             </div>
             <div className="manual-controls">
-              <p>
-                <strong>Manual movement</strong> uses normalised progress, not
-                raw point indices.
-              </p>
+              <p>The manual buttons move by 1% or 5% of the curve.</p>
               <div className="button-row">
                 <button type="button" onClick={() => setProgress(0, true)}>
                   Home
@@ -993,14 +1042,14 @@ export function App() {
               </div>
               <p className="fine-print">
                 Arc length gives constant spatial speed. Uniform segment
-                progression gives each supplied segment equal time, so dense
-                regions move more slowly.
+                progression gives each segment equal time. Closely spaced points
+                therefore take longer to pass.
               </p>
               <p className="fine-print">
-                <strong>Workspace shortcuts:</strong> Space plays or holds;
-                Left/Right steps 1%; Shift + Left/Right steps 5%; Home/End moves
-                to either end; Escape fades all sound. Shortcuts do not override
-                editable controls.
+                Keys: Space plays or holds. Left and Right move by 1%; hold
+                Shift to move by 5%. Home and End select an endpoint. Escape
+                stops the sound. Form fields keep their normal keyboard
+                behaviour.
               </p>
             </details>
           </section>
@@ -1112,8 +1161,9 @@ export function App() {
                 />
                 <p id="coordinate-help" className="fine-print">
                   CSV may include an x,y header. JSON may be [[x,y], …] or [
-                  {`{"x":x,"y":y}`}, …]. At least 2 and no more than{' '}
-                  {MAX_POINTS.toLocaleString('en-GB')} finite points.
+                  {`{"x":x,"y":y}`}, …]. Point count: 2–
+                  {MAX_POINTS.toLocaleString('en-GB')}. Every value must be
+                  finite.
                 </p>
                 <span id="coordinate-error" className="sr-only">
                   {importError}
@@ -1142,8 +1192,8 @@ export function App() {
               <summary>Freehand drawing</summary>
               <div className="details-content">
                 <p>
-                  Draw in the plot with pointer, pen or touch. Text and file
-                  import remain the complete keyboard-accessible alternatives.
+                  Draw inside the plot with a pointer, pen or touch. Keyboard
+                  users can paste coordinates or choose a file.
                 </p>
                 <div className="button-row">
                   <button
@@ -1176,9 +1226,7 @@ export function App() {
                     onClick={() => {
                       setDrawing(false);
                       setDrawingPoints([]);
-                      setAnnouncement(
-                        'Drawing cancelled; the previous curve is unchanged.',
-                      );
+                      setAnnouncement('Drawing cancelled.');
                     }}
                     disabled={!drawing}
                   >
@@ -1260,13 +1308,13 @@ export function App() {
               </button>
             </div>
             <p>
-              Each value is normalised within its domain, interpolated
-              continuously from MIDI C3 (48) to C5 (72), then converted to
-              frequency. Increasing signed values raise pitch by default.
+              The default pitch range is MIDI 48 to 72 (C3 to C5). Fractional
+              notes make pitch changes continuous; larger signed values give
+              higher pitches unless the axis is inverted.
             </p>
             <div className="global-audio-controls">
               <label htmlFor="master-volume">
-                Safe master volume: {Math.round(masterVolume * 100)}%
+                Master volume: {Math.round(masterVolume * 100)}%
               </label>
               <input
                 id="master-volume"
@@ -1318,31 +1366,30 @@ export function App() {
         <section className="explanation" aria-labelledby="how-title">
           <div>
             <p className="eyebrow">Method</p>
-            <h2 id="how-title">How the mapping works</h2>
+            <h2 id="how-title">Mapping</h2>
           </div>
           <div className="method-grid">
             <article>
-              <span>1</span>
-              <h3>Keep axes independent</h3>
+              <span>X</span>
+              <h3>X voice</h3>
               <p>
-                X controls the X voice’s pitch and Y controls a distinguishable
-                Y timbre. Neither axis is consumed as time.
+                The x coordinate sets the pitch of the warm synthetic voice.
               </p>
             </article>
             <article>
-              <span>2</span>
-              <h3>Map value to pitch</h3>
+              <span>Y</span>
+              <h3>Y voice</h3>
               <p>
-                u = clamp((value − minimum) / (maximum − minimum), 0, 1).
-                Fractional MIDI values create continuous pitch.
+                The y coordinate sets the pitch of the reed-like synthetic
+                voice. Each axis has its own numeric domain.
               </p>
             </article>
             <article>
-              <span>3</span>
-              <h3>Traverse by a clock</h3>
+              <span>t</span>
+              <h3>Playback clock</h3>
               <p>
-                Audio-context time sets duration; visual frame rate does not.
-                Ordered points may double back, intersect or form a closed path.
+                The audio clock measures the selected duration. The points stay
+                in the order supplied.
               </p>
             </article>
           </div>
@@ -1354,66 +1401,61 @@ export function App() {
           aria-labelledby="access-title"
         >
           <div>
-            <p className="eyebrow">Access and limitations</p>
-            <h2 id="access-title">Designed for more than one way of sensing</h2>
+            <p className="eyebrow">Access</p>
+            <h2 id="access-title">Access notes</h2>
           </div>
           <div className="access-grid">
             <div>
               <h3>Audio control</h3>
               <p>
-                No autoplay. Play or calibration creates the audio context after
-                a deliberate action. Stop sound is prominent, and Escape fades
-                all audio.
+                Sound begins after Play or a calibration button is pressed.
+                Escape fades the output.
               </p>
             </div>
             <div>
               <h3>Keyboard and screen readers</h3>
               <p>
-                Every action has a native control. Discrete state changes and
-                manual steps are announced; rapidly changing coordinates are not
-                announced by default.
+                The controls use standard HTML elements. Screen readers announce
+                manual moves and changes to playback state. Coordinates stay out
+                of the live region during playback.
               </p>
             </div>
             <div>
-              <h3>Visual and numeric alternatives</h3>
+              <h3>Text readout</h3>
               <p>
-                The SVG, curve summary and live readout expose position,
-                progress, values, notes and frequencies without relying only on
-                colour, movement or hearing.
+                The readout gives the exact x and y values. It also shows both
+                pitches and the playback position.
               </p>
             </div>
             <div>
-              <h3>Mono and reduced motion</h3>
+              <h3>Mono output and motion</h3>
               <p>
-                Timbres differ independently of stereo position, and voices can
-                be centred. Reduced-motion preferences remove interface
-                transitions; sonification traversal remains user-controlled.
+                The voices use different timbres and can be centred. The reduced
+                motion setting removes interface transitions.
               </p>
             </div>
           </div>
           <div className="limitation-note">
             <h3>Known limitations</h3>
             <p>
-              TIMUDS currently supports two dimensions, basic CSV rather than
-              quoted-field dialects, synthetic timbres only, and no claim of
-              perceptual, clinical, WCAG or scientific validation. Automated
-              accessibility checks cannot certify conformance.
+              TIMUDS handles two dimensions and a basic CSV format. Its timbres
+              are synthetic. It has not undergone perceptual, clinical or
+              scientific validation. Automated checks do not establish WCAG
+              conformance.
             </p>
             <p>
               Found an accessibility problem?{' '}
               <a href={issueUrl()} target="_blank" rel="noreferrer">
                 Open an accessibility issue in the project repository
               </a>
-              . On a local preview this link opens GitHub’s general issues page.
+              . On a local preview this link opens GitHub's general issues page.
             </p>
           </div>
         </section>
       </main>
       <footer>
-        <p>
-          <strong>TIMUDS</strong> · Entirely client-side · No accounts,
-          analytics, cookies, telemetry or uploaded data.
-        </p>
+        <p>TIMUDS / FIELD INSTRUMENT 01</p>
+        <p>Runs in this browser. No data is sent.</p>
       </footer>
     </>
   );

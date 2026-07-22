@@ -30,7 +30,7 @@ export function AxisControls({
         Active domain: {domain.minimum.toPrecision(5)} to{' '}
         {domain.maximum.toPrecision(5)}
         {domain.minimum === domain.maximum &&
-          ' — constant values use the midpoint pitch'}
+          '. Constant values use the midpoint pitch.'}
       </p>
       <div className="field-grid">
         <label htmlFor={`${id}-timbre`}>Synthetic timbre</label>
