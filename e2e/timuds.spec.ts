@@ -268,7 +268,8 @@ test('enables audio deliberately and operates the complete transport', async ({
   await expect(page.getByText('Audio sounding').locator('..')).toContainText(
     'No',
   );
-  await expect(page.getByLabel('Voice over')).toBeChecked();
+  await expect(page.getByLabel('Voice over')).not.toBeChecked();
+  await page.getByLabel('Voice over').check();
   await page.getByRole('button', { name: 'Play' }).click();
   await expect(page.getByText(/^Playing$/).first()).toBeVisible();
   await expect

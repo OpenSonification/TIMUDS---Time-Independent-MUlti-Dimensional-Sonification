@@ -158,11 +158,11 @@ scheduled voice and cue changes, fades to silence over 120 ms and retains
 position. Progress ticks can be Off or sound every 25%, 12.5% or 10%. Direct
 seeks are silent and delayed frames do not create catch-up storms.
 
-The checked **Voice over** control beside Play uses an installed English browser
-voice to speak the first arrival at the lowest and highest X and Y values.
-Coincident extrema are grouped into one phrase. Unticking it cancels queued
-speech; Hold, Stop all sound and Reset do the same. The calculated coordinates
-also appear as ordinary text.
+The **Voice over** control beside Play starts unchecked. Turn it on to use an
+installed English browser voice for the first arrival at the lowest and highest
+X and Y values. Coincident extrema are grouped into one phrase. Turning it off
+cancels queued speech; Hold, Stop all sound and Reset do the same. The
+calculated coordinates also appear as ordinary text.
 
 ## Keyboard controls
 

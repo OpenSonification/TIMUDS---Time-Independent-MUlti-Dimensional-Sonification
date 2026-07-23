@@ -297,7 +297,7 @@ describe('TIMUDS workspace', () => {
     expect(screen.getByLabelText('Progress tick')).toHaveValue('12.5');
     expect(screen.getByLabelText(/Test sound length/)).toHaveValue('2');
     expect(screen.getByLabelText('Test pattern')).toHaveValue('held');
-    expect(screen.getByLabelText('Voice over')).toBeChecked();
+    expect(screen.getByLabelText('Voice over')).not.toBeChecked();
     expect(readout.getByText('Y sign').nextElementSibling).toHaveTextContent(
       'Zero',
     );
@@ -457,6 +457,8 @@ describe('TIMUDS workspace', () => {
     const user = userEvent.setup();
     render(<App />);
     expect(screen.getAllByText(/highest Y/i).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Voice over')).not.toBeChecked();
+    await user.click(screen.getByLabelText('Voice over'));
     expect(screen.getByLabelText('Voice over')).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Play' }));
 

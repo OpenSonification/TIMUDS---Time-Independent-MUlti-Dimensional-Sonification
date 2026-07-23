@@ -141,10 +141,10 @@ The SVG exposes a short title/description, not thousands of points. It combines 
 Important discrete events update one polite live region. Coordinates are never
 announced on animation frames. Explorer movement replaces a pending
 announcement after a short idle period. Timed position announcements require
-explicit opt-in. Landmark Voice over starts checked, speaks only after Play and
-is cancelled by every sound-stop route. A static benchmark list provides the
-same names and coordinates. Native elements supply range, number, selection,
-disclosure, file, table and button semantics.
+explicit opt-in. Landmark Voice over also starts unchecked; once selected it
+speaks only after Play and is cancelled by every sound-stop route. A static
+benchmark list provides the same names and coordinates. Native elements supply
+range, number, selection, disclosure, file, table and button semantics.
 
 `preferences.ts` validates a versioned, bounded subset of sound and keyboard
 settings before reading or writing local storage. Playback, audio-enabled

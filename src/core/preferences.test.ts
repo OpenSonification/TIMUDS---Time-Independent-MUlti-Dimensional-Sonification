@@ -71,7 +71,7 @@ describe('versioned preferences', () => {
       stereoWidth: 0.75,
       testSoundDuration: 2,
       auditionPattern: 'held',
-      announceBenchmarks: true,
+      announceBenchmarks: false,
       valueMapping: 'pitch',
       shortcutScope: 'workspace',
       axes: { x: DEFAULT_PREFERENCES.axes.x },
@@ -89,7 +89,7 @@ describe('versioned preferences', () => {
         },
       }),
     ).toMatchObject({
-      version: 3,
+      version: 4,
       axes: {
         x: { timbre: 'warm', lowMidi: 60, highMidi: 72, pan: 0 },
         y: { timbre: 'reed', lowMidi: 60, highMidi: 72, pan: 0 },
@@ -106,7 +106,7 @@ describe('versioned preferences', () => {
         },
       }),
     ).toMatchObject({
-      version: 3,
+      version: 4,
       axes: {
         x: { timbre: 'warm', lowMidi: 40, highMidi: 52, pan: -0.4 },
         y: { timbre: 'flute', lowMidi: 67, highMidi: 79, pan: 0.4 },
@@ -114,25 +114,25 @@ describe('versioned preferences', () => {
     });
   });
 
-  it('enables the new audible landmark voice over for older preferences', () => {
+  it('defaults landmark voice over off while preserving a current opt-in', () => {
     expect(
       validatePreferences({
         ...DEFAULT_PREFERENCES,
-        version: 2,
-        announceBenchmarks: false,
+        version: 3,
+        announceBenchmarks: true,
       }),
     ).toMatchObject({
-      version: 3,
-      announceBenchmarks: true,
+      version: 4,
+      announceBenchmarks: false,
     });
     expect(
       validatePreferences({
         ...DEFAULT_PREFERENCES,
-        announceBenchmarks: false,
+        announceBenchmarks: true,
       }),
     ).toMatchObject({
-      version: 3,
-      announceBenchmarks: false,
+      version: 4,
+      announceBenchmarks: true,
     });
   });
 

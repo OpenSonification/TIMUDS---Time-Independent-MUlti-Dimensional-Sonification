@@ -46,11 +46,11 @@ Detailed evidence:
 - Optional WASD, off by default and active only on the focused controller.
 - Point-by-point curve editing, deletion and reordering without drawing or dragging.
 - Focused import-error summary linked to preserved invalid input with line or item information where possible.
-- A default-on Voice over checkbox beside Play uses the browser's installed
-  English speech voice for discrete curve landmarks. One polite live status
-  carries the matching text. Timed position announcements remain off by
-  default, and rapid explorer messages replace a pending message after a short
-  idle period.
+- An optional Voice over checkbox beside Play starts off and uses the browser's
+  installed English speech voice for discrete curve landmarks when selected.
+  One polite live status carries the matching text. Timed position
+  announcements also remain off by default, and rapid explorer messages
+  replace a pending message after a short idle period.
 - Light and dark schemes, reduced-motion handling, forced-colour rules and narrow single-column reflow.
 - A concise SVG description with detailed data available outside the image.
 
@@ -140,12 +140,12 @@ rates replace changing-pitch details when their mapping is active. Coordinates
 only is the initial manual-movement setting. Timed playback announcements are
 initially Off and may be set to 1, 2, 5 or 10 seconds.
 
-Curve-landmark Voice over starts checked and sits next to Play. During playback
-it uses `SpeechSynthesisUtterance` with an installed English voice to speak the
-first crossing of the lowest and highest X and Y source-point values. Shared
-extrema form one phrase. Constant axes receive one constant-axis phrase. Hold,
-Stop all sound, Reset, disabling Voice over and page teardown cancel queued
-speech. No speech starts before Play.
+Curve-landmark Voice over starts unchecked and sits next to Play. After the
+user selects it, playback uses `SpeechSynthesisUtterance` with an installed
+English voice to speak the first crossing of the lowest and highest X and Y
+source-point values. Shared extrema form one phrase. Constant axes receive one
+constant-axis phrase. Hold, Stop all sound, Reset, disabling Voice over and page
+teardown cancel queued speech. No speech starts before Play.
 
 The current curve's landmark names and exact coordinates remain ordinary text.
 If browser speech synthesis is absent, the checkbox is disabled and this text

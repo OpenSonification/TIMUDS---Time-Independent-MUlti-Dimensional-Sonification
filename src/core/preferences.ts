@@ -9,7 +9,7 @@ import type {
 } from './types';
 
 export const PREFERENCES_KEY = 'timuds.preferences';
-export const PREFERENCES_VERSION = 3;
+export const PREFERENCES_VERSION = 4;
 
 export interface AxisPreference {
   timbre: TimbreName;
@@ -54,7 +54,7 @@ export const DEFAULT_PREFERENCES: TimudsPreferences = {
   progressCueVolume: 0.12,
   testSoundDuration: 2,
   auditionPattern: 'held',
-  announceBenchmarks: true,
+  announceBenchmarks: false,
   visibleStep: 0.01,
   axes: {
     x: { timbre: 'warm', lowMidi: 60, highMidi: 72, pan: 0 },
@@ -124,7 +124,7 @@ function matchesAxisPreference(
 export function validatePreferences(value: unknown): TimudsPreferences {
   if (
     !isRecord(value) ||
-    ![1, 2, PREFERENCES_VERSION].includes(value.version as number) ||
+    ![1, 2, 3, PREFERENCES_VERSION].includes(value.version as number) ||
     !isRecord(value.axes)
   )
     return structuredClone(DEFAULT_PREFERENCES);

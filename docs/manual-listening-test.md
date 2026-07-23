@@ -133,11 +133,12 @@ messages are too verbose, whether Stop is easy to find, whether site-wide
 arrows interfere with reading commands, whether workspace scope is easier, and
 whether mono-compatible mode is understandable.
 
-Leave Voice over checked. Test Circle, Triangle, Constant X and Constant Y
-forwards, backwards and with looping. Confirm extrema are spoken in English
-when crossed, coincident extrema produce one phrase, loop seams do not create a
-queue, and speech remains understandable over the selected instrument. Confirm
-Hold, Stop all sound, Reset and unticking Voice over cancel queued speech.
+Confirm Voice over starts unchecked, then check it. Test Circle, Triangle,
+Constant X and Constant Y forwards, backwards and with looping. Confirm extrema
+are spoken in English when crossed, coincident extrema produce one phrase, loop
+seams do not create a queue, and speech remains understandable over the
+selected instrument. Confirm Hold, Stop all sound, Reset and unticking Voice
+over cancel queued speech.
 
 Automated unit, axe and browser tests may verify scheduling and operation, but
 they do not complete this protocol.

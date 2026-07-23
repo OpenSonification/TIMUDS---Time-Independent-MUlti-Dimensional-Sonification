@@ -46,7 +46,7 @@ Use the production build. Start with a fresh page and system output at a low lev
     unsupported file into Y and confirm its inline alert is associated with the
     Y audio input.
 16. Activate Enable audio if the sample test did not already enable it. Expected meaning: “Audio enabled. No sound is playing.”
-17. Review the curve-landmark list and confirm Voice over is checked beside Play. Activate Play. Confirm the initial and subsequently crossed extrema are spoken in English and match the listed coordinates. Check for duplicate browser and screen-reader speech. Untick Voice over if necessary. Use Hold, Stop all sound and Reset traversal; confirm queued browser speech stops and each state remains available as static text.
+17. Review the curve-landmark list and confirm Voice over is unchecked beside Play. Check it, then activate Play. Confirm the initial and subsequently crossed extrema are spoken in English and match the listed coordinates. Check for duplicate browser and screen-reader speech. Untick Voice over if necessary. Use Hold, Stop all sound and Reset traversal; confirm queued browser speech stops and each state remains available as static text.
 18. Operate Position along curve with native range commands. Expected meaning at one quarter: “Position along curve, slider, 25 percent”, allowing product-specific phrasing.
 19. Use Step backwards and Step forwards. Confirm the announcement follows the selected detail level and does not move focus.
 20. Enter two-dimensional exploration. Expected meaning: “Keyboard exploration started. Arrow keys change x and y. The curve will not change. Press Escape to return.”
