@@ -13,8 +13,28 @@ export interface CurveData {
 }
 
 export type Parameterisation = 'arc-length' | 'uniform';
+export type SonificationMode = 'spatial' | 'axis-voices';
+export type ProgressCueInterval = 'off' | '25' | '12.5' | '10';
+export type ShortcutScope = 'off' | 'workspace' | 'site-wide';
 
-export type TimbreName = 'pure' | 'warm' | 'reed' | 'bright';
+export type TimbreName =
+  | 'pure'
+  | 'warm'
+  | 'reed'
+  | 'bright'
+  | 'hollow'
+  | 'flute'
+  | 'trumpet'
+  | 'strings'
+  | 'mallet'
+  | 'drum';
+
+export interface MidiNoteMap {
+  fileName: string;
+  notes: number[];
+  noteOnEvents: number;
+  trackCount: number;
+}
 
 export interface NumericDomain {
   minimum: number;
@@ -29,6 +49,7 @@ export interface AxisConfig {
   manualDomain: NumericDomain;
   lowMidi: number;
   highMidi: number;
+  midiNoteMap: MidiNoteMap | null;
   inverted: boolean;
   gain: number;
   muted: boolean;
@@ -37,7 +58,7 @@ export interface AxisConfig {
 }
 
 export type TransportStatus =
-  'silent' | 'playing' | 'holding' | 'stopped' | 'unavailable' | 'error';
+  'ready' | 'playing' | 'holding' | 'stopped' | 'unavailable' | 'error';
 
 export interface TransportState {
   status: TransportStatus;

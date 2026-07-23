@@ -1,14 +1,30 @@
 import type { CurveData, Point } from './types';
 
 export type PresetName =
-  'Circle' | 'Triangle' | 'Diagonal line' | 'Lissajous curve' | 'Spiral';
+  | 'Circle'
+  | 'Triangle'
+  | 'Square'
+  | 'Diagonal line'
+  | 'Anti-diagonal line'
+  | 'Lissajous curve'
+  | 'Spiral'
+  | 'Y-zero crossings'
+  | 'Mirrored pair'
+  | 'Constant X'
+  | 'Constant Y';
 
 export const PRESET_NAMES: PresetName[] = [
   'Circle',
   'Triangle',
+  'Square',
   'Diagonal line',
+  'Anti-diagonal line',
   'Lissajous curve',
   'Spiral',
+  'Y-zero crossings',
+  'Mirrored pair',
+  'Constant X',
+  'Constant Y',
 ];
 
 function samples(count: number, create: (unit: number) => Point): Point[] {
@@ -38,6 +54,18 @@ export function generatePreset(name: PresetName): CurveData {
           { x: 0.866_025_4, y: -0.5 },
         ],
       };
+    case 'Square':
+      return {
+        name,
+        source: 'preset',
+        closed: true,
+        points: [
+          { x: -1, y: -1 },
+          { x: 1, y: -1 },
+          { x: 1, y: 1 },
+          { x: -1, y: 1 },
+        ],
+      };
     case 'Diagonal line':
       return {
         name,
@@ -46,6 +74,16 @@ export function generatePreset(name: PresetName): CurveData {
         points: Array.from({ length: 101 }, (_, index) => {
           const value = -1 + (index / 100) * 2;
           return { x: value, y: value };
+        }),
+      };
+    case 'Anti-diagonal line':
+      return {
+        name,
+        source: 'preset',
+        closed: false,
+        points: Array.from({ length: 101 }, (_, index) => {
+          const value = -1 + (index / 100) * 2;
+          return { x: value, y: -value };
         }),
       };
     case 'Lissajous curve':
@@ -72,6 +110,49 @@ export function generatePreset(name: PresetName): CurveData {
           const angle = unit * Math.PI * 6;
           return { x: radius * Math.cos(angle), y: radius * Math.sin(angle) };
         }),
+      };
+    case 'Y-zero crossings':
+      return {
+        name,
+        source: 'preset',
+        closed: false,
+        points: Array.from({ length: 161 }, (_, index) => {
+          const unit = index / 160;
+          return {
+            x: -1 + unit * 2,
+            y: Math.sin(unit * Math.PI * 8) * 0.8,
+          };
+        }),
+      };
+    case 'Mirrored pair':
+      return {
+        name,
+        source: 'preset',
+        closed: false,
+        points: [
+          { x: 0.25, y: 0.75 },
+          { x: 0.75, y: 0.25 },
+        ],
+      };
+    case 'Constant X':
+      return {
+        name,
+        source: 'preset',
+        closed: false,
+        points: Array.from({ length: 101 }, (_, index) => ({
+          x: 0.25,
+          y: -1 + (index / 100) * 2,
+        })),
+      };
+    case 'Constant Y':
+      return {
+        name,
+        source: 'preset',
+        closed: false,
+        points: Array.from({ length: 101 }, (_, index) => ({
+          x: -1 + (index / 100) * 2,
+          y: -0.25,
+        })),
       };
   }
 }

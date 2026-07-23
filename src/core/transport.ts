@@ -25,7 +25,7 @@ export function transitionTransport(
       return { ...state, status: 'stopped' };
     case 'RESET':
       return {
-        status: state.status === 'silent' ? 'silent' : 'stopped',
+        status: 'ready',
         progress: 0,
       };
     case 'SEEK':

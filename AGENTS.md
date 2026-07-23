@@ -37,6 +37,11 @@ Run `npx playwright install chromium` once where the test browser is absent.
 5. Keep one persistent, gesture-created audio engine. Smooth parameter changes and fade output. Never autoplay.
 6. Imported data remains local, bounded and rendered as text only. Do not add telemetry, a backend or external runtime assets.
 7. Vite production `base` remains relative for unknown GitHub Pages repository paths.
+8. Route every Stop, Reset, Escape, visibility and preview-exit path through the common audio cancellation and fade method.
+9. Add page shortcuts only through the central shortcut resolver. Never process them in editable/native controls; site-wide character shortcuts must remain disableable.
+10. Keep the visible Stop control and never autoplay. Panning must not be the sole representation of a coordinate.
+11. Do not live-announce animation frames. Keep ordinary current data visible numerically and technical audio values in collapsed details.
+12. Do not restore decorative hero imagery without an accessible product purpose. New audio mappings need mono and textual alternatives; new interactions need keyboard and accessibility tests.
 
 ## Accessibility expectations
 

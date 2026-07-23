@@ -31,6 +31,34 @@ describe('pitch mapping', () => {
     );
   });
 
+  it('quantises a value to a bounded MIDI note map', () => {
+    const notes = [48, 52, 55, 60, 64, 67, 72];
+    expect(
+      mapValueToPitch(-1, { minimum: -1, maximum: 1 }, 24, 96, false, notes)
+        .midi,
+    ).toBe(48);
+    expect(
+      mapValueToPitch(0, { minimum: -1, maximum: 1 }, 24, 96, false, notes)
+        .midi,
+    ).toBe(60);
+    expect(
+      mapValueToPitch(1, { minimum: -1, maximum: 1 }, 24, 96, true, notes).midi,
+    ).toBe(48);
+  });
+
+  it('uses the middle imported note for a constant axis', () => {
+    expect(
+      mapValueToPitch(
+        4,
+        { minimum: 4, maximum: 4 },
+        24,
+        96,
+        false,
+        [48, 60, 72],
+      ).midi,
+    ).toBe(60);
+  });
+
   it('converts MIDI notes to frequency', () => {
     expect(midiToFrequency(69)).toBeCloseTo(440, 8);
     expect(midiToFrequency(60)).toBeCloseTo(261.6256, 3);

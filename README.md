@@ -2,7 +2,11 @@
 
 **Time-Independent Multidimensional Sonification**
 
-TIMUDS is a client-side proof of principle for sonifying an ordered two-dimensional curve. Conventional sonification often consumes x as time and maps only y to sound. TIMUDS keeps x and y as independent data dimensions: one sustained synthetic voice carries x position and a distinguishable second voice carries y position. Time controls only how the application travels through the supplied point order.
+TIMUDS is a browser instrument for listening to an ordered two-dimensional
+curve without turning x into time. In the default Spatial voice, x moves one
+sound from left to right while y changes its pitch. Axis voices offers separate
+X and Y sounds. In both cases, time only controls travel through the supplied
+point order.
 
 The default circle demonstrates why this matters. Its x coordinate repeatedly rises and falls, yet a complete circuit remains representable because no coordinate is sorted or treated as the clock.
 
@@ -10,15 +14,22 @@ The default circle demonstrates why this matters. Its x coordinate repeatedly ri
 
 ## Current scope
 
-- Five deterministic sources: circle, triangle, diagonal line, Lissajous curve and spiral.
+- Eleven deterministic sources, including comparison pairs, zero crossings and
+  constant-axis cases.
 - Local CSV/JSON paste and file import with bounded input and useful validation.
 - Point-by-point native editing, paginated source-point inspection and optional freehand drawing.
 - Open/closed curves, reverse traversal, reset, summaries and reproducible JSON download.
 - Constant-spatial-speed and uniform-segment traversal; timed, looped and manual control.
-- Two simultaneous Web Audio voices with four locally generated timbres.
-- Independent automatic/manual domains, shared domain, pitch inversion, gains, mute, solo and optional panning.
-- Native follow-curve navigation and independent two-dimensional keyboard exploration.
-- Responsive SVG, persistent numeric/pitch/state readout and configurable announcements.
+- Spatial and Axis voice modes backed by one persistent local Web Audio graph.
+- Ten locally synthesised timbres, including trumpet-like brass, flute-like,
+  strings, mallet and pitched drum.
+- Independent local Standard MIDI File note-map import for X and Y.
+- Separated default Axis registers, overlap repair, stereo-width and explicit
+  mono-compatible controls.
+- Configurable progress ticks and guarded workspace or site-wide keyboard
+  commands.
+- Responsive SVG, concise numeric/state readout, collapsed technical details
+  and independent two-dimensional keyboard exploration.
 - No backend, tracking, cookies, accounts, external fonts, samples or runtime service.
 
 ## Run locally
@@ -71,9 +82,22 @@ CSV without a header, JSON pairs and JSON objects are also accepted:
 
 Malformed values are rejected rather than reinterpreted. `NaN`, infinity, missing fields and wrong item shapes are errors. See [triangle.csv](examples/triangle.csv) and [double-back.json](examples/double-back.json).
 
-## Value-to-pitch mapping
+## Sound modes and mapping
 
-Each axis has its own data domain. Automatic mode uses that axis’s minimum and maximum in the current curve. Manual mode accepts an explicit domain. Shared-domain mode takes the union of the two active domains so equal numeric values map consistently.
+Spatial voice maps X continuously across a default stereo width of 0.75 and
+maps Y to pitch. An optional smooth timbre blend reinforces negative, zero and
+positive Y without replacing the numeric readout.
+
+Axis voices maps each dimension to its own pitch, timbre and gain. X defaults
+to MIDI 48–60 at −0.65 pan; Y defaults to MIDI 67–79 at +0.65 pan. Touching or
+overlapping custom registers produce a warning and a one-step restore action.
+Mono-compatible output selects centred Axis voices so X is not lost when stereo
+channels are combined.
+
+Each axis has its own data domain. Automatic mode uses that axis’s minimum and
+maximum in the current curve. Manual mode accepts an explicit domain.
+Shared-domain mode takes the union of the two active domains so equal numeric
+values map consistently.
 
 For a signed value:
 
@@ -83,7 +107,12 @@ midi = lowNote + u * (highNote - lowNote)
 frequency = 440 * 2^((midi - 69) / 12)
 ```
 
-The default range is MIDI 48–72 (C3–C5). Fractional MIDI values make pitch continuous. Inversion replaces `u` with `1 - u`. A constant axis uses `u = 0.5`, avoiding division by zero. “Value” means the signed number, not its absolute magnitude. Volume controls listening comfort only; volume is not a data channel.
+Fractional MIDI values make pitch continuous. Inversion replaces `u` with
+`1 - u`. A constant axis uses `u = 0.5`, avoiding division by zero. “Value”
+means the signed number, not its absolute magnitude. Volume controls listening
+comfort only; volume is not a data channel.
+
+Each axis can instead load a local `.mid` or `.midi` Standard MIDI File of up to 2 MB. TIMUDS extracts note-on pitches, removes duplicates and sorts the resulting palette from low to high. The normalised coordinate selects the nearest palette entry, so the mapping remains monotonic and inspectable. Timing, velocity, channel, program-change and effect instructions are not replayed. The instrument selector determines the generated sound.
 
 ## Traversal
 
@@ -94,15 +123,33 @@ Progress is normalised from 0 to 1 and never requires monotonic x.
 
 Timed playback uses `AudioContext.currentTime`, a monotonic audio clock. `requestAnimationFrame` updates the visual marker but does not determine duration. A non-looping 20-second circle therefore completes one circuit in approximately 20 seconds independent of visual frame rate.
 
-Hold stops traversal and sustains the current x/y sounds. Stop all sound fades
-to silence and retains position. The native slider and named step buttons use
-the selected normalised progress step rather than raw point indices.
+Hold stops traversal and sustains the current sound. Stop all sound cancels
+scheduled voice and cue changes, fades to silence over 120 ms and retains
+position. Progress ticks can be Off or sound every 25%, 12.5% or 10%. Direct
+seeks are silent and delayed frames do not create catch-up storms.
 
 ## Keyboard controls
 
-The page does not capture arrow or character keys globally. Follow-curve
-navigation uses the native **Position along curve** range, where Left/Right and
-Home/End retain browser behaviour.
+Page shortcuts default to **Workspace only** scope. They can be turned off or
+deliberately changed to site-wide scope. Editable fields, native controls, open
+dialogs, IME composition, handled events and browser/assistive-technology
+modifiers keep their keys.
+
+| Key                  | Action                           |
+| -------------------- | -------------------------------- |
+| Space                | Play or hold                     |
+| S                    | Stop all sound                   |
+| R                    | Stop and return to the start     |
+| Left / Right         | Move 1%                          |
+| Shift + Left / Right | Move 10%                         |
+| Home                 | Move to the start                |
+| End                  | Move to the end of an open curve |
+| Escape               | Emergency fade outside controls  |
+| ?                    | Open Keyboard help               |
+
+Alt can optionally be required for S, R and ?. The Help dialog shows the full
+map and current scope, contains a Stop control and restores focus when closed.
+Every command also has a visible native control.
 
 The two-dimensional explorer has one focused controller:
 
@@ -119,7 +166,14 @@ optional, off by default and active only on the focused controller.
 
 ## Audio design and safety
 
-The audio graph is created only after Play or calibration is activated. Two long-lived oscillators feed separate filters, voice gains and stereo panners, then a conservative master gain and dynamics compressor. Frequencies and gains use short smoothing constants to avoid discontinuities. X defaults to a warm organ-like synthetic periodic wave; Y defaults to a more resonant reed-like synthetic wave. Timbre, not stereo alone, separates axes, and “centre both voices” supports mono output.
+The graph is created only after Play, Hear current position or a calibration
+action. Two long-lived oscillators, a persistent cue source, filters, gains and
+panners feed one conservative master and compressor. The same graph serves both
+sound modes. Pitch, pan and timbre use short smoothing constants.
+
+All exits share one Stop method: visible Stop controls, S, Escape, Reset, curve
+or mode changes, page hiding, previews and explorer exits cancel future
+automation and ramp the master gain to zero. No sound starts automatically.
 
 Changing tabs while sound is active stops traversal and fades audio. Audio resources are closed on application teardown. If Web Audio is unsupported, curve creation and numeric/visual inspection remain usable.
 
@@ -132,15 +186,16 @@ not a conformance claim. Current work includes native controls, a complete text
 readout, point editing without dragging, focus-scoped plane exploration,
 coalesced announcements, reflow, visible focus and deliberate audio.
 
-Read the [accessibility approach](docs/accessibility.md), [implementation
-audit](docs/accessibility-audit.md), [WCAG traceability
-matrix](docs/wcag-2.2-aa-matrix.md) and [screen-reader test
-plan](docs/screen-reader-test-plan.md). Manual screen-reader and device results
-remain unrecorded.
+Read the [audio-mode design](docs/audio-modes.md), [keyboard
+controls](docs/keyboard-controls.md), [accessibility
+approach](docs/accessibility.md), [implementation
+decisions](docs/implementation-decisions.md) and [manual listening
+protocol](docs/manual-listening-test.md). Manual screen-reader, hardware and
+device results remain unrecorded.
 
 ## Privacy and browser requirements
 
-All parsing, drawing, synthesis and export happen locally. Imported data never leaves the browser. The production application makes no requests after its static assets load and contains no analytics, telemetry, cookies, accounts, remote media or third-party runtime code.
+All coordinate and MIDI parsing, drawing, synthesis and export happen locally. Imported data never leaves the browser. MIDI upload does not request access to a connected MIDI device. The production application makes no requests after its static assets load and contains no analytics, telemetry, cookies, accounts, remote media or third-party runtime code.
 
 A current desktop or mobile browser with SVG and ES2022 support is required. Sonification additionally needs the Web Audio API and an output route. Browsers may impose their own audio permission and background-suspension rules.
 
@@ -189,7 +244,9 @@ Pushes to `main` then run validation and deployment. The workflow can also be st
 
 ## Known limitations and future directions
 
-- Two dimensions and pitch mapping only; future work may add dimensions, spatial/haptic channels, quantised scales and alternative acoustic mappings.
+- Two dimensions only; arbitrary SoundFonts, uploaded audio samples,
+  head-tracking and custom key remapping remain out of scope.
+- MIDI import creates a sorted pitch palette; it is not a MIDI sequencer, sampler or sound-font player and does not reproduce the file’s timing or instrument commands.
 - Basic comma-separated numeric data is supported, not quoted fields, locale decimal commas or arbitrary CSV dialects.
 - Freehand input uses deterministic distance filtering and arc-length resampling; it is an authoring convenience, not a digitisation measurement.
 - The app does not import its exported full configuration yet; coordinate arrays can be re-imported separately.

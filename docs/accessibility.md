@@ -17,8 +17,13 @@ Detailed evidence:
 - One main landmark, concise header, footer, stable page navigation and skip links to main, traversal and current position.
 - Logical headings and native buttons, ranges, numbers, selects, text area, file input, checkboxes, disclosures, definition lists and source-point table.
 - Silent initial state. Enable audio prepares the graph without sounding it. Play, Hear and calibration are deliberate sound actions.
-- Persistent Stop all sound, low initial master gain, voice gains, mute, solo, mono-friendly centring and smooth fades.
-- A complete visible current-position definition list available without audio or the SVG.
+- Persistent Stop all sound, low initial master gain and one shared 120 ms cancellation/fade path.
+- Spatial voice maps X to pan and Y to pitch; Axis voices adds distinct timbres and separated registers. Mono-compatible output preserves both dimensions with centred Axis voices.
+- Ten independently selectable synthetic timbres with visible descriptions and named calibration controls.
+- Separate native MIDI file inputs for X and Y, bounded local parsing, associated inline errors, a readable note-palette summary and a remove action.
+- A concise visible coordinate/progress/state readout available without audio or the SVG, with notes, frequencies and engine state in Technical details.
+- Configurable progress ticks with the native slider and percentage as non-audio equivalents. Ticks are never live-announced.
+- A central, disableable keyboard shortcut resolver with workspace and deliberately selected site-wide scopes.
 - A native Position along curve range plus named start, back, forward and end actions.
 - A dedicated focused two-dimensional controller with native x/y ranges and number inputs.
 - Optional WASD, off by default and active only on the focused controller.
@@ -34,7 +39,12 @@ Detailed evidence:
 
 Use Tab and Shift+Tab to move through native controls. Enter and Space activate controls according to browser conventions. The first Tab reveals skip links.
 
-No arrow, Home, End, Space or WASD handler is registered across the page. Escape has one safety use while sound is active; it leaves editable and dialog controls alone.
+Workspace shortcuts support Space, S, R, Left/Right, Shift+Left/Right, Home,
+open-curve End, Escape and ?. They can be switched off or deliberately extended
+site-wide. They never handle keys owned by editable/native controls, open
+dialogs, IME composition, the browser or assistive-technology modifier
+commands. The visible Keyboard help dialog contains the complete map and
+restores focus when closed.
 
 ### Follow the curve
 
@@ -71,7 +81,10 @@ Up always increases numeric y. Inverting Y pitch does not reverse coordinate mov
 
 ### Audio safety
 
-The visible **Stop all sound** button remains available after audio is enabled. Escape fades currently active audio when focus is outside editable fields and dialogs. Changing or hiding the page also fades timed playback.
+The visible **Stop all sound** button remains available after audio is enabled.
+S and Escape use the same fade when focus is outside controls and dialogs.
+Reset, curve/mode changes, previews, explorer exits and page hiding also use the
+common cancellation/fade path.
 
 ## Screen-reader and audio coexistence
 
@@ -89,7 +102,8 @@ The current-position section is static navigable text, not a live region. During
 
 ## Visual and numeric alternatives
 
-The current-position and curve-summary sections expose:
+The always-visible current-position summary exposes coordinates, progress and
+sound state. Its Technical details and the Curve summary additionally expose:
 
 - mode and transport state;
 - normalised progress and elapsed time;
@@ -99,15 +113,21 @@ The current-position and curve-summary sections expose:
 - direction and closure;
 - whether audio is enabled and sounding;
 - mute and solo state for each voice;
+- selected instrument and continuous or imported MIDI pitch source for each voice;
 - point count, coordinate ranges and curve length.
 
 The source-point table exposes individual coordinates and segment information. X/Y text labels, different marker shapes, solid/dashed treatments, timbre differences and state words supplement colour and stereo cues.
 
 ## Mono and hearing considerations
 
-The two voices use different synthetic timbres. Panning is optional and never the only distinction. **Centre both voices (mono-friendly)** removes panning. Each axis has gain, mute, solo and test controls. Numeric note/frequency output remains available when the device is muted or a voice cannot be heard.
+Panning is never the only distinction. Axis voices also uses separate registers,
+timbres, labels and numeric values. **Mono-compatible output** selects and
+centres Axis voices instead of silently dropping Spatial voice's X mapping.
+Each axis has instrument, gain, mute, solo and test controls. Numeric
+note/frequency output and the imported MIDI palette remain available when the
+device is muted or a voice cannot be heard.
 
-No automated test can judge safe volume, timbre separation, masking, distortion or comfort. Begin with low system output.
+No automated test can judge safe volume, instrument separation, masking, distortion, decay comfort or whether a synthetic label matches a listener’s expectation. Begin with low system output.
 
 ## Motion, zoom and reflow
 
@@ -119,8 +139,13 @@ The production Chromium test verifies no page-level horizontal overflow at 320 C
 
 Available checks cover:
 
-- 46 pure/component tests, including keyboard navigation, imports, initial silence, names, states, focus restoration and representative axe scans;
-- nine Chromium production-preview flows covering skip links, audio enable/play/hold/stop, native range keys, pointer drawing, independent arrows, inverted pitch direction, Shift stepping, Escape, Tab exit, optional WASD, text entry, import errors, source-point editing and download-independent production semantics;
+- Pure/component tests covering spatial mapping, pan bounds, sign blending,
+  overlap detection, progress thresholds and loops, shortcut guards, validated
+  preferences, persistent graph scheduling, MIDI parsing, imports, focus
+  restoration and representative axe scans.
+- Chromium production-preview flows covering both audio modes, overlap repair,
+  mono fallback, shortcut help and fade scheduling as well as transport,
+  imports, drawing, explorer operation, MIDI maps and source-point editing.
 - axe in initial, audio-active, holding, error, explorer, point-editor, dark, reduced-motion, forced-colour emulation and narrow states;
 - a 320 CSS-pixel page-overflow assertion;
 - strict TypeScript, ESLint, Prettier and production build checks.
@@ -140,6 +165,10 @@ The tested browser engine is Chromium supplied by Playwright. No real screen-rea
 - Touch and pen hardware, mobile orientation and largest system text.
 - Sustained, short-preview and on-demand audio alongside screen-reader speech.
 - Mono, one-earbud, hearing-device and output-interruption behaviour.
+- Perceptual distinction, spatial movement, sign-cue usefulness, progress-tick
+  comfort and every sustained, mallet and pitched-drum pairing. See
+  [manual-listening-test.md](manual-listening-test.md).
+- MIDI note-map naming, error and pitch-palette output with each listed screen reader.
 - Testing by disabled participants.
 
 ## Known limitations
@@ -150,6 +179,7 @@ The tested browser engine is Chromium supplied by Playwright. No real screen-rea
 - Very large point tables are paginated but still require sequential review.
 - Screen-reader support for SVG descriptions, native ranges and disclosures varies.
 - Synthetic audio differs across browsers, operating systems and output devices.
+- MIDI import uses note-on pitches as a sorted palette. It does not replay timing, velocity, channels, programs or effects and cannot import recorded audio.
 - The site has not received a formal external accessibility audit.
 
 ## Report a problem

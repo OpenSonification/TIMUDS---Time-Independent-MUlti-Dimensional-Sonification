@@ -34,8 +34,9 @@ The review used [WCAG 2.2](https://www.w3.org/TR/WCAG22/) and the [WAI-ARIA Auth
 - Document-level input: one `keydown` listener for active-audio Escape safety; one `visibilitychange` listener that stops hidden-page audio.
 - Focus-scoped custom input: arrow and optional WASD handling on the plane controller only.
 - Pointer input: SVG drawing through pointer events after the user activates drawing.
+- Native file input: separate bounded local coordinate and X/Y MIDI-note-map imports; no drag-and-drop or device permission.
 - Programmatic focus: failed-import summary; plane controller after deliberate entry; opener after explicit explorer exit or Escape; point-number input after deletion.
-- Live output: one atomic polite status region for discrete messages. Import failures use one focused alert.
+- Live output: one atomic polite status region for discrete messages. Coordinate-import failures use one focused alert. MIDI failures use an associated inline alert and preserve the previously loaded map.
 - No positive `tabindex`, page-level `role="application"`, `accesskey`, drag-and-drop, hover-only action or focusable SVG point exists.
 
 ## Pointer-equivalent table
@@ -47,8 +48,9 @@ The review used [WCAG 2.2](https://www.w3.org/TR/WCAG22/) and the [WAI-ARIA Auth
 | Select a source point     | “Move to point” table buttons and jump-to-point input           |
 | Reorder or delete points  | Named point-editor buttons                                      |
 | Adjust mapping            | Native ranges, numbers, checkboxes and selects                  |
+| Load or remove note maps  | Native per-axis file inputs and named remove buttons            |
 | Start, hold or stop sound | Native transport buttons                                        |
 
 ## Evidence boundary
 
-Chromium production-preview automation covered the initial, playing, holding, import-error, explorer, point-editor, dark, reduced-motion and 320-pixel states. Automated axe results had no serious or critical findings in those states. No claim is made for conformance, perceptual clarity, screen-reader compatibility across products, mobile hardware, operating-system forced colours or safety of listening levels.
+Chromium production-preview automation covered the initial, playing, holding, coordinate-import-error, MIDI-map success/error/removal, explorer, point-editor, dark, reduced-motion and 320-pixel states. Automated axe results had no serious or critical findings in those states. No claim is made for conformance, perceptual clarity, screen-reader compatibility across products, mobile hardware, operating-system forced colours or safety of listening levels.

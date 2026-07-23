@@ -5,10 +5,26 @@ async function mockAudioContext(page: Page): Promise<void> {
   await page.addInitScript(() => {
     class Parameter {
       value = 0;
+      calls: string[] = [];
       setTargetAtTime(value: number): void {
         this.value = value;
+        this.calls.push('target');
       }
-      cancelScheduledValues(): void {}
+      setValueAtTime(value: number): void {
+        this.value = value;
+        this.calls.push('value');
+      }
+      linearRampToValueAtTime(value: number): void {
+        this.value = value;
+        this.calls.push('linear');
+      }
+      exponentialRampToValueAtTime(value: number): void {
+        this.value = value;
+        this.calls.push('exponential');
+      }
+      cancelScheduledValues(): void {
+        this.calls.push('cancel');
+      }
     }
     class Node {
       connect<T>(destination: T): T {
@@ -41,15 +57,25 @@ async function mockAudioContext(page: Page): Promise<void> {
       attack = new Parameter();
       release = new Parameter();
     }
+    class BufferSource extends Node {
+      buffer: object | null = null;
+      loop = false;
+      start(): void {}
+      stop(): void {}
+    }
     class InstrumentedAudioContext {
       state = 'running';
       destination = new Node();
+      sampleRate = 48_000;
+      gains: Gain[] = [];
       private started = performance.now();
       get currentTime(): number {
         return (performance.now() - this.started) / 1000;
       }
       createGain(): Gain {
-        return new Gain();
+        const gain = new Gain();
+        this.gains.push(gain);
+        return gain;
       }
       createDynamicsCompressor(): Compressor {
         return new Compressor();
@@ -66,12 +92,27 @@ async function mockAudioContext(page: Page): Promise<void> {
       createPeriodicWave(): object {
         return {};
       }
+      createBuffer(_channels: number, length: number): object {
+        return {
+          getChannelData: () => new Float32Array(length),
+        };
+      }
+      createBufferSource(): BufferSource {
+        return new BufferSource();
+      }
       resume(): Promise<void> {
         return Promise.resolve();
       }
       close(): Promise<void> {
         this.state = 'closed';
         return Promise.resolve();
+      }
+      constructor() {
+        (
+          window as typeof window & {
+            __timudsAudio?: InstrumentedAudioContext;
+          }
+        ).__timudsAudio = this;
       }
     }
     Object.defineProperty(window, 'AudioContext', {
@@ -90,6 +131,41 @@ function seriousViolations(
   );
 }
 
+function midiUpload(name = 'major-triad.mid') {
+  const track = [
+    0, 0x90, 60, 100, 0, 0x90, 64, 100, 0, 0x90, 67, 100, 0, 0xff, 0x2f, 0,
+  ];
+  return {
+    name,
+    mimeType: 'audio/midi',
+    buffer: Buffer.from([
+      0x4d,
+      0x54,
+      0x68,
+      0x64,
+      0,
+      0,
+      0,
+      6,
+      0,
+      0,
+      0,
+      1,
+      0,
+      96,
+      0x4d,
+      0x54,
+      0x72,
+      0x6b,
+      0,
+      0,
+      0,
+      track.length,
+      ...track,
+    ]),
+  };
+}
+
 test.beforeEach(async ({ page }) => {
   await mockAudioContext(page);
   await page.goto('/');
@@ -99,11 +175,13 @@ test('loads silently, exposes skip links and uses relative production assets', a
   page,
 }) => {
   await expect(
-    page.getByRole('heading', { level: 1, name: /Listen around/ }),
+    page.getByRole('heading', {
+      level: 1,
+      name: /Hear a curve in two dimensions/,
+    }),
   ).toBeVisible();
-  await expect(page.getByText('Circle · preset')).toBeVisible();
   await expect(
-    page.getByText(/Silent\. Audio has not started/).first(),
+    page.getByText(/Ready\. Audio has not started/).first(),
   ).toBeVisible();
   await expect(page.locator('svg[role="img"] path.curve-line')).toHaveAttribute(
     'd',
@@ -120,6 +198,8 @@ test('loads silently, exposes skip links and uses relative production assets', a
   await expect(skipLink).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
+  await page.locator('#curve-controls > summary').click();
+  await expect(page.getByText('Circle · preset')).toBeVisible();
   expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
     [],
   );
@@ -129,6 +209,7 @@ test('enables audio deliberately and operates the complete transport', async ({
   page,
 }) => {
   await page.getByRole('button', { name: 'Enable audio' }).click();
+  await page.getByText('Technical details').click();
   await expect(page.getByText('Audio sounding').locator('..')).toContainText(
     'No',
   );
@@ -152,9 +233,76 @@ test('enables audio deliberately and operates the complete transport', async ({
   );
 });
 
+test('switches sound modes safely and exposes guarded keyboard help', async ({
+  page,
+}) => {
+  await page.locator('#sound-controls > summary').click();
+  await expect(page.getByLabel('Spatial voice')).toBeChecked();
+  await expect(page.getByLabel(/Stereo width/)).toHaveValue('0.75');
+
+  await page.getByLabel('Axis voices').check();
+  const xVoice = page.getByRole('group', { name: 'X-axis voice' });
+  const yVoice = page.getByRole('group', { name: 'Y-axis voice' });
+  await expect(xVoice.getByLabel('High MIDI note')).toHaveValue('60');
+  await expect(yVoice.getByLabel('Low MIDI note')).toHaveValue('67');
+  await xVoice.getByText('Advanced X mapping').click();
+  await xVoice.getByLabel('High MIDI note').fill('70');
+  await expect(page.getByText(/X and Y pitch ranges overlap/)).toBeVisible();
+  await page.getByRole('button', { name: 'Restore separated ranges' }).click();
+  await expect(page.getByText(/X and Y pitch ranges overlap/)).toHaveCount(0);
+
+  await page.getByLabel('Spatial voice').check();
+  await page.getByLabel('Mono-compatible output').check();
+  await expect(page.getByLabel('Axis voices')).toBeChecked();
+  await expect(page.getByLabel('Spatial voice')).toBeDisabled();
+
+  const help = page.getByRole('button', { name: 'Keyboard help' }).first();
+  await help.click();
+  const dialog = page.getByRole('dialog', { name: 'Keyboard help' });
+  await expect(dialog).toBeVisible();
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+  await dialog.getByRole('button', { name: 'Close keyboard help' }).click();
+  await expect(help).toBeFocused();
+
+  const workspaceTarget = page.locator('.workspace-grid');
+  await workspaceTarget.dispatchEvent('keydown', {
+    key: ' ',
+    code: 'Space',
+    bubbles: true,
+  });
+  await expect(page.getByText(/^Playing$/).first()).toBeVisible();
+  await workspaceTarget.dispatchEvent('keydown', {
+    key: ' ',
+    code: 'Space',
+    bubbles: true,
+  });
+  await expect(
+    page.getByText(/Holding at current point/).first(),
+  ).toBeVisible();
+  await workspaceTarget.dispatchEvent('keydown', {
+    key: 's',
+    code: 'KeyS',
+    bubbles: true,
+  });
+  await expect(page.getByText(/^Stopped$/).first()).toBeVisible();
+  const masterCalls = await page.evaluate(
+    () =>
+      (
+        window as typeof window & {
+          __timudsAudio?: { gains: Array<{ gain: { calls: string[] } }> };
+        }
+      ).__timudsAudio?.gains[0]?.gain.calls ?? [],
+  );
+  expect(masterCalls).toContain('cancel');
+  expect(masterCalls).toContain('linear');
+});
+
 test('imports a triangle and exposes validation errors accessibly', async ({
   page,
 }) => {
+  await page.locator('#curve-controls > summary').click();
   await page.getByText('Paste or upload coordinate data').click();
   const text = page.getByLabel('Coordinate data');
   await text.fill('x,y\n0,1\n-1,-1\n1,-1');
@@ -170,6 +318,7 @@ test('imports a triangle and exposes validation errors accessibly', async ({
 });
 
 test('creates a freehand curve with pointer input', async ({ page }) => {
+  await page.locator('#curve-controls > summary').click();
   await page.getByText('Freehand drawing').click();
   await page.getByRole('button', { name: 'Start drawing' }).click();
   const plot = page.getByRole('img', { name: 'Ordered two-dimensional curve' });
@@ -212,9 +361,12 @@ test('uses the native follow-curve slider with standard keyboard behaviour', asy
 test('explores x and y independently with focus-scoped arrows', async ({
   page,
 }) => {
+  await page.locator('#sound-controls > summary').click();
+  await page.getByLabel('Axis voices').check();
   await page.selectOption('#axis-x-timbre', 'bright');
   await expect(page.locator('#axis-x-timbre')).toHaveValue('bright');
-  await page.getByLabel('Centre both voices (mono-friendly)').check();
+  await page.getByLabel('Mono-compatible output').check();
+  await page.locator('#advanced-controls > summary').click();
   await page
     .getByRole('button', { name: 'Enter two-dimensional exploration' })
     .click();
@@ -247,10 +399,68 @@ test('explores x and y independently with focus-scoped arrows', async ({
   ).toBeFocused();
   await expect(
     page
-      .locator('#current-position')
-      .getByText('Mode', { exact: true })
+      .locator('#current-position .position-summary')
+      .getByText('Navigation', { exact: true })
       .locator('..'),
   ).toContainText('Following curve');
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+});
+
+test('selects independent instruments and imports a local MIDI note map', async ({
+  page,
+}) => {
+  await page.locator('#sound-controls > summary').click();
+  await page.getByLabel('Axis voices').check();
+  await page.getByText('Technical details').click();
+  const xVoice = page.getByRole('group', { name: 'X-axis voice' });
+  const yVoice = page.getByRole('group', { name: 'Y-axis voice' });
+
+  await xVoice.getByLabel('Instrument sound').selectOption('trumpet');
+  await yVoice.getByLabel('Instrument sound').selectOption('drum');
+  await expect(xVoice.getByLabel('Instrument sound')).toHaveValue('trumpet');
+  await expect(yVoice.getByLabel('Instrument sound')).toHaveValue('drum');
+
+  await xVoice.getByLabel('MIDI file for x-axis').setInputFiles(midiUpload());
+  await expect(xVoice.locator('.midi-map-summary')).toContainText(
+    '3 distinct notes from 3 note-on events',
+  );
+  await expect(xVoice.getByLabel('Low MIDI note')).toBeDisabled();
+  await expect(xVoice.getByLabel('High MIDI note')).toBeDisabled();
+  await expect(page.getByText('X note').locator('..').locator('dd')).toHaveText(
+    'G4',
+  );
+  await expect(page.getByText('Audio enabled').locator('..')).toContainText(
+    'No',
+  );
+
+  await yVoice
+    .getByLabel('MIDI file for y-axis')
+    .setInputFiles(midiUpload('y-major-triad.midi'));
+  await expect(yVoice.locator('.midi-map-summary')).toContainText(
+    '3 distinct notes from 3 note-on events',
+  );
+  await expect(yVoice.getByLabel('Low MIDI note')).toBeDisabled();
+
+  await yVoice.getByLabel('MIDI file for y-axis').setInputFiles({
+    name: 'broken.mid',
+    mimeType: 'audio/midi',
+    buffer: Buffer.from([1, 2, 3, 4]),
+  });
+  await expect(yVoice.getByRole('alert')).toContainText(
+    'MThd header is missing',
+  );
+  await expect(yVoice.getByLabel('MIDI file for y-axis')).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+  await expect(yVoice.locator('.midi-map-summary')).toContainText(
+    'y-major-triad.midi',
+  );
+
+  await xVoice.getByRole('button', { name: 'Remove X MIDI note map' }).click();
+  await expect(xVoice.getByLabel('Low MIDI note')).toBeEnabled();
   expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
     [],
   );
@@ -259,6 +469,7 @@ test('explores x and y independently with focus-scoped arrows', async ({
 test('leaves the explorer with Tab and keeps optional WASD scoped', async ({
   page,
 }) => {
+  await page.locator('#advanced-controls > summary').click();
   await page
     .getByRole('button', { name: 'Enter two-dimensional exploration' })
     .click();
@@ -284,6 +495,7 @@ test('leaves the explorer with Tab and keeps optional WASD scoped', async ({
   await expect(controller).not.toBeFocused();
   await page.keyboard.type('w');
   await expect(yValue).toHaveText('0.05');
+  await page.locator('#curve-controls > summary').click();
   await page.getByText('Paste or upload coordinate data').click();
   const text = page.getByLabel('Coordinate data');
   await text.focus();
@@ -294,6 +506,7 @@ test('leaves the explorer with Tab and keeps optional WASD scoped', async ({
 test('inspects, adds, reorders and deletes points without dragging', async ({
   page,
 }) => {
+  await page.locator('#curve-controls > summary').click();
   await page.getByLabel('Curve preset').selectOption('Triangle');
   await page.getByRole('button', { name: 'Load preset' }).click();
   await page.getByText('Inspect and edit source points').click();
@@ -328,10 +541,12 @@ test('inspects, adds, reorders and deletes points without dragging', async ({
 test('has no serious axe findings in error, explorer, dark and narrow states', async ({
   page,
 }) => {
+  await page.locator('#curve-controls > summary').click();
   await page.getByText('Paste or upload coordinate data').click();
   await page.getByLabel('Coordinate data').fill('broken');
   await page.getByRole('button', { name: 'Import pasted coordinates' }).click();
   await expect(page.getByRole('alert')).toBeFocused();
+  await page.locator('#advanced-controls > summary').click();
   expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
     [],
   );

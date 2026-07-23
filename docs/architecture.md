@@ -6,6 +6,8 @@
 
 `src/core/parser.ts` accepts a selected or detected CSV/JSON format. It rejects empty input, malformed rows/items, non-finite numbers, fewer than two points and more than 20,000 points. File reading separately enforces 1 MB and known extensions before text parsing.
 
+`src/core/midi.ts` reads Standard MIDI File bytes without Web MIDI or a runtime dependency. It validates `MThd`/`MTrk` structure, bounded variable-length values, track boundaries, running status and channel-event sizes. It accepts at most 2 MB, 64 tracks and 50,000 note-on events. The result contains only a sanitised filename and sorted unique note numbers; timing, velocity, programs, effects and the original bytes are discarded.
+
 Preset functions are deterministic and omit a duplicated endpoint on closed curves. Closure is owned by geometry so the return segment appears exactly once.
 
 ## Geometry and interpolation
@@ -25,11 +27,19 @@ Freehand input is converted from SVG space to mathematical coordinates (positive
 
 Axis configuration is an array of `AxisConfig`, keyed by `x | y`. Presentation iterates this structure. Domains are calculated independently, optionally replaced by manual domains, then optionally combined by union. Reversed manual bounds are safely ordered before mapping.
 
-Pitch functions normalise, clamp, optionally invert, interpolate fractional MIDI and convert MIDI to hertz. Equal domain bounds explicitly return the midpoint. Note names are the nearest named semitone; displayed frequency retains the continuous fractional MIDI value.
+Pitch functions normalise, clamp, optionally invert and convert MIDI to hertz. Without a note map they interpolate fractional MIDI. With an imported MIDI palette they select the nearest sorted note, producing a monotonic, quantised mapping. Equal domain bounds explicitly return the midpoint. Note names are the nearest named semitone; displayed frequency retains a continuous fractional MIDI value only in continuous mode.
+
+`sonification.ts` owns X-to-pan mapping, Spatial and Axis mode point mapping,
+range-overlap detection and the equal-power Y-sign blend. `instruments.ts` is
+the pure catalogue for ten synthetic choices. Each definition supplies a
+visible label and description plus harmonics, filter and articulation
+parameters.
 
 ## Timing and transport
 
-The explicit states are `silent`, `playing`, `holding`, `stopped`, `unavailable` and `error`. A pure transition function covers user and completion events. Position remains separate from whether sound is active.
+The explicit states are `ready`, `playing`, `holding`, `stopped`, `unavailable`
+and `error`. A pure transition function covers user and completion events.
+Position remains separate from whether sound is active.
 
 When Play begins, the app captures starting progress and `AudioEngine.currentTime`. Each animation callback derives:
 
@@ -41,7 +51,11 @@ Looping applies modulo one. A non-looping result clamps at one and enters holdin
 
 Manual movement writes normalised progress directly. Once audio has been deliberately enabled, a manual move sustains its new coordinate and enters holding. Before activation, it remains silent.
 
-`keyboardNavigation.ts` keeps plane-domain expansion, derived step sizes, arrow/WASD mapping, clamping, boundary detection and nearest-source-point selection pure. Buttons, native inputs and the focused plane controller call the same application commands. No document-wide directional handler exists.
+`keyboardNavigation.ts` keeps plane-domain expansion, derived step sizes,
+arrow/WASD mapping, clamping, boundary detection and nearest-source-point
+selection pure. `shortcuts.ts` is the central page-command resolver: it owns
+scope, modifier, repeat, editable-control, dialog and composition guards.
+Visible controls remain available for every page command.
 
 Plane exploration stores the curve traversal progress before it starts. Its coordinate is separate from `CurveData`, so movement cannot mutate the curve. The user can explicitly copy the coordinate into the point list or move the saved traversal progress to the nearest source point.
 
@@ -50,14 +64,28 @@ Plane exploration stores the curve traversal progress before it starts. Its coor
 One `AudioEngine` owns the lifecycle:
 
 ```text
-X oscillator → X filter → X voice gain → X panner ┐
-                                                   ├→ master gain → compressor → destination
-Y oscillator → Y filter → Y voice gain → Y panner ┘
+X oscillator → X filter → X articulation → X voice gain → X panner ┐
+                                                                  ├→ master gain → compressor → destination
+Y oscillator → Y filter → Y articulation → Y voice gain → Y panner ┘
+looped noise buffer → high-pass filter → cue gain ─────────────────┘
 ```
 
-The context and graph are created only from deliberate Play/calibration handlers. Oscillators then remain alive until teardown. `PeriodicWave` harmonics and filter settings make the warm, reed and bright timbres; pure tone uses sine. Frequency, voice gain, panning and master gain use `setTargetAtTime`. Solo is resolved across the iterable axis array. The low master default plus per-axis headroom and compressor reduces clipping risk; it does not replace listening-level judgement.
+The context and graph are created only from deliberate Play/calibration
+handlers. Sources then remain alive until teardown. In Axis mode the two paths
+are independent voices. In Spatial mode they share Y pitch and X pan and can
+crossfade hollow/bright sign timbres. `PeriodicWave` harmonics and filter
+settings make the synthetic instrument families; pure tone uses sine.
+Frequency, voice gain, panning and master gain use bounded smoothing.
 
-Stop changes the master target to zero rather than disconnecting live nodes. Page hiding stops traversal and fades audio. Application teardown stops/disconnects oscillators and closes the context. An unavailable constructor leaves all non-audio paths operational.
+`progressCues.ts` detects threshold crossings without audio or UI state. Direct
+seeks are silent, loop wraps are explicit and call sites cap scheduling after
+delayed frames.
+
+`stopAllSound` marks the engine silent, cancels future oscillator, filter,
+articulation, voice-gain, pan and cue automation, then linearly ramps the master
+to zero over 120 ms. Every application Stop route reaches this method.
+Application teardown additionally stops/disconnects sources and closes the
+context. An unavailable constructor leaves all non-audio paths operational.
 
 ## Presentation and accessibility
 
@@ -67,10 +95,14 @@ The SVG exposes a short title/description, not thousands of points. It combines 
 
 Important discrete events update one polite live region. Coordinates are never announced on animation frames. Explorer movement replaces a pending announcement after a short idle period. Timed announcements require an explicit interval. Native elements supply range, number, selection, disclosure, file, table and button semantics.
 
+`preferences.ts` validates a versioned, bounded subset of sound and keyboard
+settings before reading or writing local storage. Playback, audio-enabled state,
+curve position and imported data are never persisted.
+
 ## Extension points
 
 - Add axis keys/configuration and generalise `Point` to a keyed coordinate record before adding more voices. Keep the current two-dimensional interface until an interaction model is validated.
 - Add alternative mapping functions behind a typed strategy without coupling them to `AudioEngine`.
-- Add quantised scales by returning a mapped frequency from a new pure mapper.
+- Extend MIDI mapping only through pure, bounded strategies; do not turn file input into device access or retain source bytes.
 - Replace the geometry linear lookup with binary search if profiling demonstrates a need.
 - Add import for the exported schema only with version validation and safe merging.

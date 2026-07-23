@@ -53,10 +53,18 @@ export function mapValueToPitch(
   lowMidi: number,
   highMidi: number,
   inverted = false,
+  midiNoteMap: readonly number[] | null = null,
 ): PitchResult {
   const base = normaliseValue(value, domain);
   const normalised = inverted ? 1 - base : base;
-  const midi = lowMidi + normalised * (highMidi - lowMidi);
+  const noteIndex =
+    midiNoteMap && midiNoteMap.length > 0
+      ? Math.round(normalised * (midiNoteMap.length - 1))
+      : -1;
+  const midi =
+    noteIndex >= 0
+      ? clamp(midiNoteMap?.[noteIndex] ?? lowMidi, 0, 127)
+      : lowMidi + normalised * (highMidi - lowMidi);
   return {
     normalised,
     midi,

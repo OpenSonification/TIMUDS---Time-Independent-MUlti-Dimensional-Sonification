@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   AudioEngine,
+  STOP_FADE_SECONDS,
   webAudioSupported,
   type AudioFrame,
 } from './audio/AudioEngine';
@@ -33,6 +34,15 @@ import {
   stepForName,
   type ExplorerStepName,
 } from './core/keyboardNavigation';
+import { INSTRUMENT_OPTIONS, INSTRUMENTS } from './core/instruments';
+import { readMidiNoteMap } from './core/midi';
+import {
+  DEFAULT_PREFERENCES,
+  loadPreferences,
+  savePreferences,
+  type TimudsPreferences,
+} from './core/preferences';
+import { getCrossedMilestones, progressCueInterval } from './core/progressCues';
 import {
   MAX_FILE_BYTES,
   MAX_POINTS,
@@ -42,6 +52,11 @@ import {
 } from './core/parser';
 import { effectiveDomain, mapValueToPitch, sharedDomain } from './core/pitch';
 import { generatePreset, PRESET_NAMES, type PresetName } from './core/presets';
+import { resolveShortcut } from './core/shortcuts';
+import {
+  mapPointForSonification,
+  pitchRangesOverlap,
+} from './core/sonification';
 import { timedProgress, transitionTransport } from './core/transport';
 import type {
   AxisConfig,
@@ -50,11 +65,13 @@ import type {
   NumericDomain,
   Parameterisation,
   Point,
+  ProgressCueInterval,
+  ShortcutScope,
+  SonificationMode,
   TransportState,
 } from './core/types';
 
 const DEFAULT_CURVE = generatePreset('Circle');
-const SMALL_STEP = 0.01;
 type AnnouncementDetail =
   'off' | 'coordinates' | 'coordinates-pitches' | 'full';
 type PlaybackAnnouncementInterval = 'off' | '1' | '2' | '5' | '10';
@@ -67,12 +84,13 @@ const DEFAULT_AXES: AxisConfig[] = [
     automaticDomain: true,
     manualDomain: { minimum: -1, maximum: 1 },
     lowMidi: 48,
-    highMidi: 72,
+    highMidi: 60,
+    midiNoteMap: null,
     inverted: false,
     gain: 0.72,
     muted: false,
     solo: false,
-    pan: -0.35,
+    pan: -0.65,
   },
   {
     key: 'y',
@@ -80,18 +98,19 @@ const DEFAULT_AXES: AxisConfig[] = [
     timbre: 'reed',
     automaticDomain: true,
     manualDomain: { minimum: -1, maximum: 1 },
-    lowMidi: 48,
-    highMidi: 72,
+    lowMidi: 67,
+    highMidi: 79,
+    midiNoteMap: null,
     inverted: false,
     gain: 0.64,
     muted: false,
     solo: false,
-    pan: 0.35,
+    pan: 0.65,
   },
 ];
 
 function initialTransport(audioAvailable: boolean): TransportState {
-  return { status: audioAvailable ? 'silent' : 'unavailable', progress: 0 };
+  return { status: audioAvailable ? 'ready' : 'unavailable', progress: 0 };
 }
 
 function formatNumber(value: number): string {
@@ -111,6 +130,59 @@ function safeManualDomain(domain: NumericDomain): NumericDomain {
   return { minimum: domain.maximum, maximum: domain.minimum };
 }
 
+function pitchForAxis(value: number, domain: NumericDomain, axis: AxisConfig) {
+  return mapValueToPitch(
+    value,
+    domain,
+    axis.lowMidi,
+    axis.highMidi,
+    axis.inverted,
+    axis.midiNoteMap?.notes,
+  );
+}
+
+function audioFrameForPoint(
+  point: Point,
+  frameAxes: AxisConfig[],
+  domains: Record<AxisKey, NumericDomain>,
+  mode: SonificationMode,
+  stereoWidth: number,
+  spatialTimbre: AxisConfig['timbre'],
+  ySignCue: boolean,
+  masterVolume: number,
+  monoCompatible: boolean,
+): AudioFrame {
+  const configs = Object.fromEntries(
+    frameAxes.map((axis) => [axis.key, axis]),
+  ) as Record<AxisKey, AxisConfig>;
+  const mapping = mapPointForSonification(
+    mode,
+    point,
+    domains,
+    configs,
+    stereoWidth,
+  );
+  if (mapping.mode === 'spatial') {
+    return {
+      mode: 'spatial',
+      frequency: mapping.frequency,
+      pan: mapping.pan,
+      signBlend: mapping.signBlend,
+      timbre: spatialTimbre,
+      ySignCue,
+      masterVolume,
+      monoCompatible,
+    };
+  }
+  return {
+    mode: 'axis-voices',
+    frequencies: mapping.frequencies,
+    axes: frameAxes,
+    masterVolume,
+    monoCompatible,
+  };
+}
+
 function issueUrl(): string {
   if (typeof window === 'undefined') return 'https://github.com/issues';
   const match = window.location.hostname.match(/^([^.]+)\.github\.io$/);
@@ -121,7 +193,42 @@ function issueUrl(): string {
   return 'https://github.com/issues';
 }
 
+function keyboardTargetOwnsInput(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (
+    target.isContentEditable ||
+    target.matches(
+      'input, textarea, select, button, a[href], summary, [contenteditable="true"]',
+    )
+  )
+    return true;
+  const role = target.getAttribute('role');
+  return Boolean(
+    role &&
+    [
+      'button',
+      'checkbox',
+      'combobox',
+      'listbox',
+      'menu',
+      'menuitem',
+      'option',
+      'radio',
+      'slider',
+      'spinbutton',
+      'switch',
+      'tab',
+      'textbox',
+    ].includes(role),
+  );
+}
+
 export function App() {
+  const [initialPreferences] = useState<TimudsPreferences>(() =>
+    loadPreferences(
+      typeof window === 'undefined' ? undefined : window.localStorage,
+    ),
+  );
   const [audioAvailable] = useState(() => webAudioSupported());
   const [engine] = useState(() => new AudioEngine());
   const [curve, setCurve] = useState<CurveData>(DEFAULT_CURVE);
@@ -129,7 +236,6 @@ export function App() {
   const [selectedPreset, setSelectedPreset] = useState<PresetName>('Circle');
   const [closed, setClosed] = useState(DEFAULT_CURVE.closed);
   const [reverse, setReverse] = useState(false);
-  const [equalScale, setEqualScale] = useState(true);
   const [parameterisation, setParameterisation] =
     useState<Parameterisation>('arc-length');
   const [duration, setDuration] = useState(20);
@@ -140,18 +246,54 @@ export function App() {
   );
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [audioSounding, setAudioSounding] = useState(false);
-  const [axes, setAxes] = useState<AxisConfig[]>(DEFAULT_AXES);
-  const [useSharedDomain, setUseSharedDomain] = useState(false);
-  const [centreVoices, setCentreVoices] = useState(false);
-  const [masterVolume, setMasterVolume] = useState(0.18);
-  const [announcement, setAnnouncement] = useState(
-    'Audio is off. Press Play or choose a calibration sound.',
+  const [axes, setAxes] = useState<AxisConfig[]>(() =>
+    DEFAULT_AXES.map((axis) => ({
+      ...axis,
+      ...initialPreferences.axes[axis.key],
+    })),
   );
+  const [midiErrors, setMidiErrors] = useState<Record<AxisKey, string>>({
+    x: '',
+    y: '',
+  });
+  const [useSharedDomain, setUseSharedDomain] = useState(false);
+  const [sonificationMode, setSonificationModeState] =
+    useState<SonificationMode>(
+      initialPreferences.monoCompatible
+        ? 'axis-voices'
+        : initialPreferences.sonificationMode,
+    );
+  const [stereoWidth, setStereoWidth] = useState(
+    initialPreferences.stereoWidth,
+  );
+  const [monoCompatible, setMonoCompatibleState] = useState(
+    initialPreferences.monoCompatible,
+  );
+  const [ySignCue, setYSignCue] = useState(initialPreferences.ySignCue);
+  const [spatialTimbre, setSpatialTimbre] = useState(
+    initialPreferences.spatialTimbre,
+  );
+  const [progressCueSetting, setProgressCueSetting] =
+    useState<ProgressCueInterval>(initialPreferences.progressCueInterval);
+  const [progressCueVolume, setProgressCueVolume] = useState(
+    initialPreferences.progressCueVolume,
+  );
+  const [shortcutScope, setShortcutScope] = useState<ShortcutScope>(
+    initialPreferences.shortcutScope,
+  );
+  const [requireAltForLetters, setRequireAltForLetters] = useState(
+    initialPreferences.requireAltForLetters,
+  );
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [masterVolume, setMasterVolume] = useState(0.18);
+  const [announcement, setAnnouncement] = useState('Ready.');
   const [announcementDetail, setAnnouncementDetail] =
     useState<AnnouncementDetail>('coordinates');
   const [playbackAnnouncementInterval, setPlaybackAnnouncementInterval] =
     useState<PlaybackAnnouncementInterval>('off');
-  const [followStep, setFollowStep] = useState(SMALL_STEP);
+  const [followStep, setFollowStep] = useState<0.01 | 0.1>(
+    initialPreferences.visibleStep,
+  );
   const [format, setFormat] = useState<CoordinateFormat>('auto');
   const [coordinateText, setCoordinateText] = useState('x,y\n-1,0\n0,1\n1,0');
   const [importError, setImportError] = useState('');
@@ -170,6 +312,9 @@ export function App() {
     useState<ExplorerListeningMode>('short');
   const [previewDuration, setPreviewDuration] = useState(0.6);
   const plotRef = useRef<CurvePlotHandle>(null);
+  const workspaceRef = useRef<HTMLElement>(null);
+  const helpDialogRef = useRef<HTMLDialogElement>(null);
+  const helpTriggerRef = useRef<HTMLElement | null>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
   const playbackStartTimeRef = useRef(0);
@@ -181,6 +326,9 @@ export function App() {
   const savedTraversalProgressRef = useRef(0);
   const lastExplorerKeyTimeRef = useRef(0);
   const lastBoundaryRef = useRef<string | null>(null);
+  const midiRequestRef = useRef<Record<AxisKey, number>>({ x: 0, y: 0 });
+  const lastCueProgressRef = useRef(0);
+  const lastAnimationTimeRef = useRef(0);
 
   const geometry = useMemo(
     () => buildCurveGeometry(curve.points, closed),
@@ -243,42 +391,135 @@ export function App() {
     [explorerDomains],
   );
   const displayedPoint = explorerActive ? explorerPoint : curvePoint;
+  const axisConfigs = useMemo(
+    () =>
+      Object.fromEntries(axes.map((axis) => [axis.key, axis])) as Record<
+        AxisKey,
+        AxisConfig
+      >,
+    [axes],
+  );
   const currentPitches = useMemo(
     () =>
       Object.fromEntries(
         axes.map((axis) => [
           axis.key,
-          mapValueToPitch(
-            displayedPoint[axis.key],
-            activeDomains[axis.key],
-            axis.lowMidi,
-            axis.highMidi,
-            axis.inverted,
-          ),
+          pitchForAxis(displayedPoint[axis.key], activeDomains[axis.key], axis),
         ]),
       ) as Record<AxisKey, ReturnType<typeof mapValueToPitch>>,
     [activeDomains, axes, displayedPoint],
   );
+  const sonificationMapping = useMemo(
+    () =>
+      mapPointForSonification(
+        sonificationMode,
+        displayedPoint,
+        activeDomains,
+        axisConfigs,
+        stereoWidth,
+      ),
+    [activeDomains, axisConfigs, displayedPoint, sonificationMode, stereoWidth],
+  );
   const audioFrame = useMemo<AudioFrame>(
-    () => ({
-      frequencies: {
-        x: currentPitches.x.frequency,
-        y: currentPitches.y.frequency,
-      },
+    () =>
+      sonificationMapping.mode === 'spatial'
+        ? {
+            mode: 'spatial',
+            frequency: sonificationMapping.frequency,
+            pan: sonificationMapping.pan,
+            signBlend: sonificationMapping.signBlend,
+            timbre: spatialTimbre,
+            ySignCue,
+            masterVolume,
+            monoCompatible,
+          }
+        : {
+            mode: 'axis-voices',
+            frequencies: sonificationMapping.frequencies,
+            axes,
+            masterVolume,
+            monoCompatible,
+          },
+    [
       axes,
       masterVolume,
-      centreVoices,
-    }),
-    [axes, centreVoices, currentPitches, masterVolume],
+      monoCompatible,
+      sonificationMapping,
+      spatialTimbre,
+      ySignCue,
+    ],
   );
   const nearestPointIndex = useMemo(
     () => nearestSourcePointIndex(curve.points, displayedPoint),
     [curve.points, displayedPoint],
   );
+  const rangesOverlap = pitchRangesOverlap(
+    axisConfigs.x.midiNoteMap?.notes[0] ?? axisConfigs.x.lowMidi,
+    axisConfigs.x.midiNoteMap?.notes.at(-1) ?? axisConfigs.x.highMidi,
+    axisConfigs.y.midiNoteMap?.notes[0] ?? axisConfigs.y.lowMidi,
+    axisConfigs.y.midiNoteMap?.notes.at(-1) ?? axisConfigs.y.highMidi,
+  );
 
   useEffect(() => {
     if (importError) errorSummaryRef.current?.focus();
   }, [importError]);
+
+  useEffect(() => {
+    const dialog = helpDialogRef.current;
+    if (!dialog) return;
+    if (helpOpen && !dialog.open) {
+      if (typeof dialog.showModal === 'function') dialog.showModal();
+      else dialog.setAttribute('open', '');
+      window.setTimeout(() => dialog.querySelector<HTMLElement>('h2')?.focus());
+    } else if (!helpOpen && dialog.open) {
+      if (typeof dialog.close === 'function') dialog.close();
+      else dialog.removeAttribute('open');
+    }
+  }, [helpOpen]);
+
+  useEffect(() => {
+    const persistedAxes = Object.fromEntries(
+      axes.map((axis) => [
+        axis.key,
+        {
+          timbre: axis.timbre,
+          lowMidi: axis.lowMidi,
+          highMidi: axis.highMidi,
+          pan: axis.pan,
+        },
+      ]),
+    ) as TimudsPreferences['axes'];
+    const preferences: TimudsPreferences = {
+      version: 1,
+      sonificationMode,
+      progressCueInterval: progressCueSetting,
+      shortcutScope,
+      requireAltForLetters,
+      stereoWidth,
+      monoCompatible,
+      ySignCue,
+      spatialTimbre,
+      progressCueVolume,
+      visibleStep: followStep,
+      axes: persistedAxes,
+    };
+    savePreferences(
+      typeof window === 'undefined' ? undefined : window.localStorage,
+      preferences,
+    );
+  }, [
+    axes,
+    followStep,
+    monoCompatible,
+    progressCueSetting,
+    progressCueVolume,
+    requireAltForLetters,
+    shortcutScope,
+    sonificationMode,
+    spatialTimbre,
+    stereoWidth,
+    ySignCue,
+  ]);
 
   useEffect(() => {
     if (audioEnabled && audioSounding) engine.applyFrame(audioFrame);
@@ -305,21 +546,41 @@ export function App() {
         geometry,
       );
       plotRef.current?.setCurrentPoint(point);
-      const frequencies = Object.fromEntries(
-        axes.map((axis) => [
-          axis.key,
-          mapValueToPitch(
-            point[axis.key],
-            activeDomains[axis.key],
-            axis.lowMidi,
-            axis.highMidi,
-            axis.inverted,
-          ).frequency,
-        ]),
-      ) as Record<AxisKey, number>;
-      engine.applyFrame({ frequencies, axes, masterVolume, centreVoices });
-
       const now = performance.now();
+      engine.applyFrame(
+        audioFrameForPoint(
+          point,
+          axes,
+          activeDomains,
+          sonificationMode,
+          stereoWidth,
+          spatialTimbre,
+          ySignCue,
+          masterVolume,
+          monoCompatible,
+        ),
+      );
+      const cueInterval = progressCueInterval(progressCueSetting);
+      if (cueInterval !== null) {
+        const delayedFrame =
+          lastAnimationTimeRef.current > 0 &&
+          now - lastAnimationTimeRef.current > 500;
+        const milestones = getCrossedMilestones(
+          lastCueProgressRef.current,
+          result.progress,
+          cueInterval,
+          {
+            direction: 'forward',
+            looped: loop,
+            maximumCues: delayedFrame ? 0 : 1,
+          },
+        );
+        const milestone = milestones.at(-1);
+        if (milestone !== undefined)
+          engine.triggerProgressCue(progressCueVolume, milestone === 1);
+      }
+      lastCueProgressRef.current = result.progress;
+      lastAnimationTimeRef.current = now;
       if (now - lastVisualUpdateRef.current > 100 || result.completed) {
         lastVisualUpdateRef.current = now;
         dispatch({ type: 'SEEK', progress: result.progress });
@@ -349,7 +610,6 @@ export function App() {
   }, [
     activeDomains,
     axes,
-    centreVoices,
     closed,
     curve.points,
     duration,
@@ -357,22 +617,23 @@ export function App() {
     geometry,
     loop,
     masterVolume,
+    monoCompatible,
     parameterisation,
     playbackAnnouncementInterval,
+    progressCueSetting,
+    progressCueVolume,
     reverse,
+    sonificationMode,
+    spatialTimbre,
+    stereoWidth,
     transport.status,
+    ySignCue,
   ]);
 
   useEffect(() => {
     const handleVisibility = () => {
-      if (
-        document.hidden &&
-        (transport.status === 'playing' || transport.status === 'holding')
-      ) {
-        engine.fadeOut();
-        setAudioSounding(false);
-        dispatch({ type: 'STOP' });
-        setAnnouncement(
+      if (document.hidden && audioSounding) {
+        stopAllSound(
           'The page was hidden, so playback stopped at the current point.',
         );
       }
@@ -380,33 +641,82 @@ export function App() {
     document.addEventListener('visibilitychange', handleVisibility);
     return () =>
       document.removeEventListener('visibilitychange', handleVisibility);
-  }, [engine, transport.status]);
+  });
 
   useEffect(() => {
-    function handleSafetyEscape(event: globalThis.KeyboardEvent): void {
-      if (!audioSounding || event.defaultPrevented || event.key !== 'Escape')
-        return;
+    function handleShortcut(event: globalThis.KeyboardEvent): void {
       const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      if (
-        target.closest('dialog') ||
-        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
-        target.isContentEditable
-      )
-        return;
-      if (previewTimerRef.current !== null) {
-        window.clearTimeout(previewTimerRef.current);
-        previewTimerRef.current = null;
+      const workspace = workspaceRef.current;
+      const command = resolveShortcut({
+        key: event.key,
+        scope: shortcutScope,
+        targetInsideWorkspace:
+          target instanceof Node &&
+          Boolean(
+            workspace?.contains(target) ||
+            target === document.body ||
+            target === document.documentElement,
+          ),
+        targetOwnsKeyboard: keyboardTargetOwnsInput(target),
+        dialogOpen: helpOpen || Boolean(document.querySelector('dialog[open]')),
+        defaultPrevented: event.defaultPrevented,
+        composing: event.isComposing,
+        repeat: event.repeat,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        requireAltForLetters,
+        endIsAvailable: !closed,
+      });
+      if (!command) return;
+
+      let handled = true;
+      switch (command) {
+        case 'toggle-play-hold':
+          if (transport.status === 'playing') hold();
+          else void play();
+          break;
+        case 'stop':
+          stopAllSound('Sound stopped.');
+          break;
+        case 'reset':
+          resetToStart();
+          break;
+        case 'step-back-1':
+          seekCommand(progressRef.current - 0.01, true);
+          break;
+        case 'step-forward-1':
+          seekCommand(progressRef.current + 0.01, true);
+          break;
+        case 'step-back-10':
+          seekCommand(progressRef.current - 0.1, true);
+          break;
+        case 'step-forward-10':
+          seekCommand(progressRef.current + 0.1, true);
+          break;
+        case 'start':
+          seekCommand(0, true);
+          break;
+        case 'end':
+          seekCommand(1, true);
+          break;
+        case 'emergency-stop':
+          if (audioSounding) {
+            stopAllSound('Escape stopped all sound.');
+          } else {
+            handled = false;
+          }
+          break;
+        case 'open-help':
+          openKeyboardHelp(target);
+          break;
       }
-      engine.fadeOut();
-      setAudioSounding(false);
-      dispatch({ type: 'SEEK', progress: progressRef.current });
-      dispatch({ type: 'STOP' });
-      setAnnouncement('Escape stopped all sound at the current position.');
+      if (handled) event.preventDefault();
     }
-    document.addEventListener('keydown', handleSafetyEscape);
-    return () => document.removeEventListener('keydown', handleSafetyEscape);
-  }, [audioSounding, engine]);
+    document.addEventListener('keydown', handleShortcut);
+    return () => document.removeEventListener('keydown', handleShortcut);
+  });
 
   useEffect(
     () => () => {
@@ -420,19 +730,17 @@ export function App() {
   );
 
   function frameForPoint(point: Point, frameAxes = axes): AudioFrame {
-    const frequencies = Object.fromEntries(
-      frameAxes.map((axis) => [
-        axis.key,
-        mapValueToPitch(
-          point[axis.key],
-          activeDomains[axis.key],
-          axis.lowMidi,
-          axis.highMidi,
-          axis.inverted,
-        ).frequency,
-      ]),
-    ) as Record<AxisKey, number>;
-    return { frequencies, axes: frameAxes, masterVolume, centreVoices };
+    return audioFrameForPoint(
+      point,
+      frameAxes,
+      activeDomains,
+      sonificationMode,
+      stereoWidth,
+      spatialTimbre,
+      ySignCue,
+      masterVolume,
+      monoCompatible,
+    );
   }
 
   function positionAnnouncement(
@@ -446,13 +754,7 @@ export function App() {
     const pitches = Object.fromEntries(
       axes.map((axis) => [
         axis.key,
-        mapValueToPitch(
-          point[axis.key],
-          activeDomains[axis.key],
-          axis.lowMidi,
-          axis.highMidi,
-          axis.inverted,
-        ),
+        pitchForAxis(point[axis.key], activeDomains[axis.key], axis),
       ]),
     ) as Record<AxisKey, ReturnType<typeof mapValueToPitch>>;
     const withPitches = `${base} X ${pitches.x.noteName}, ${pitches.x.frequency.toFixed(1)} hertz. Y ${pitches.y.noteName}, ${pitches.y.frequency.toFixed(1)} hertz.`;
@@ -481,6 +783,8 @@ export function App() {
   function setProgress(next: number, announce = false): void {
     const progress = clampProgress(next);
     progressRef.current = progress;
+    lastCueProgressRef.current = progress;
+    lastAnimationTimeRef.current = 0;
     dispatch({ type: 'SEEK', progress });
     const point = interpolateCurve(
       curve.points,
@@ -518,7 +822,7 @@ export function App() {
       );
       return true;
     } catch {
-      engine.fadeOut();
+      engine.stopAllSound();
       setAudioSounding(false);
       dispatch({ type: 'ERROR' });
       setAnnouncement(
@@ -551,13 +855,19 @@ export function App() {
       playbackStartProgressRef.current = start;
       playbackStartTimeRef.current = engine.currentTime;
       lastPlaybackAnnouncementRef.current = 0;
+      lastCueProgressRef.current = start;
+      lastAnimationTimeRef.current = performance.now();
       plotRef.current?.setCurrentPoint(startPoint);
       engine.startSound(frameForPoint(startPoint));
       setAudioSounding(true);
       dispatch({ type: 'PLAY' });
-      setAnnouncement('Playing the X and Y voices.');
+      setAnnouncement(
+        sonificationMode === 'spatial'
+          ? 'Playing. X controls stereo position and Y controls pitch.'
+          : 'Playing the separate X and Y voices.',
+      );
     } catch {
-      engine.fadeOut();
+      engine.stopAllSound();
       setAudioSounding(false);
       dispatch({ type: 'ERROR' });
       setAnnouncement(
@@ -570,22 +880,92 @@ export function App() {
     if (transport.status !== 'playing') return;
     dispatch({ type: 'SEEK', progress: progressRef.current });
     dispatch({ type: 'HOLD' });
-    setAnnouncement('Held at the current point.');
+    setAnnouncement(`Holding at ${(progressRef.current * 100).toFixed(1)}%.`);
   }
 
-  function stopSound(message = 'Sound stopped at the current point.'): void {
+  function stopAllSound(message = 'Sound stopped at the current point.'): void {
     clearPreviewTimer();
-    engine.fadeOut();
+    engine.stopAllSound(STOP_FADE_SECONDS);
     setAudioSounding(false);
+    lastCueProgressRef.current = progressRef.current;
+    lastAnimationTimeRef.current = 0;
     dispatch({ type: 'SEEK', progress: progressRef.current });
     dispatch({ type: 'STOP' });
     setAnnouncement(message);
   }
 
+  function stopSound(message = 'Sound stopped at the current point.'): void {
+    stopAllSound(message);
+  }
+
+  function openKeyboardHelp(target: EventTarget | null): void {
+    helpTriggerRef.current =
+      target instanceof HTMLElement
+        ? target
+        : (document.activeElement as HTMLElement);
+    setHelpOpen(true);
+  }
+
+  function closeKeyboardHelp(): void {
+    setHelpOpen(false);
+    window.setTimeout(() => helpTriggerRef.current?.focus(), 0);
+  }
+
+  function changeSonificationMode(next: SonificationMode): void {
+    if (next === sonificationMode) return;
+    if (next === 'spatial' && monoCompatible) {
+      setAnnouncement(
+        'Spatial voice is unavailable while mono-compatible output is on.',
+      );
+      return;
+    }
+    stopAllSound('Changing sound mode stopped all sound.');
+    setSonificationModeState(next);
+    setAnnouncement(
+      next === 'spatial'
+        ? 'Spatial voice selected. X controls stereo position and Y controls pitch.'
+        : 'Axis voices selected. X and Y use separate sounds.',
+    );
+  }
+
+  function changeMonoCompatible(enabled: boolean): void {
+    stopAllSound('Changing output mode stopped all sound.');
+    setMonoCompatibleState(enabled);
+    if (enabled) {
+      setSonificationModeState('axis-voices');
+      setAnnouncement(
+        'Mono-compatible output is on. Axis voices were selected so X remains audible.',
+      );
+    } else {
+      setAnnouncement('Mono-compatible output is off.');
+    }
+  }
+
+  function restoreSeparatedRanges(): void {
+    stopAllSound('Restoring pitch ranges stopped all sound.');
+    midiRequestRef.current.x += 1;
+    midiRequestRef.current.y += 1;
+    setMidiErrors({ x: '', y: '' });
+    setAxes((current) =>
+      current.map((axis) => ({
+        ...axis,
+        lowMidi: DEFAULT_PREFERENCES.axes[axis.key].lowMidi,
+        highMidi: DEFAULT_PREFERENCES.axes[axis.key].highMidi,
+        midiNoteMap: null,
+      })),
+    );
+    setAnnouncement(
+      'Separated pitch ranges restored: X MIDI 48 to 60 and Y MIDI 67 to 79.',
+    );
+  }
+
   function resetToStart(): void {
-    engine.fadeOut();
+    clearPreviewTimer();
+    engine.stopAllSound(STOP_FADE_SECONDS);
     setAudioSounding(false);
     progressRef.current = 0;
+    lastCueProgressRef.current = 0;
+    lastAnimationTimeRef.current = 0;
     dispatch({ type: 'RESET' });
     plotRef.current?.setCurrentPoint(
       interpolateCurve(
@@ -601,8 +981,7 @@ export function App() {
   }
 
   function applyCurve(next: CurveData): void {
-    engine.fadeOut();
-    setAudioSounding(false);
+    stopAllSound('Changing the curve stopped all sound.');
     setExplorerActive(false);
     setCurve(next);
     setOriginalCurve(next);
@@ -696,6 +1075,44 @@ export function App() {
     );
   }
 
+  async function importMidiForAxis(key: AxisKey, file: File): Promise<void> {
+    const request = midiRequestRef.current[key] + 1;
+    midiRequestRef.current[key] = request;
+    setMidiErrors((current) => ({ ...current, [key]: '' }));
+    try {
+      const midiNoteMap = await readMidiNoteMap(file);
+      if (midiRequestRef.current[key] !== request) return;
+      setAxes((current) =>
+        current.map((axis) =>
+          axis.key === key ? { ...axis, midiNoteMap } : axis,
+        ),
+      );
+      setAnnouncement(
+        `${key.toUpperCase()} MIDI note map loaded from ${midiNoteMap.fileName}. ${midiNoteMap.notes.length} distinct ${midiNoteMap.notes.length === 1 ? 'note' : 'notes'} from ${midiNoteMap.noteOnEvents.toLocaleString('en-GB')} note-on events. Audio remains ${audioSounding ? 'on' : 'off'}.`,
+      );
+    } catch (error) {
+      if (midiRequestRef.current[key] !== request) return;
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'The MIDI note map could not be read.';
+      setMidiErrors((current) => ({ ...current, [key]: message }));
+    }
+  }
+
+  function clearMidiForAxis(key: AxisKey): void {
+    midiRequestRef.current[key] += 1;
+    setMidiErrors((current) => ({ ...current, [key]: '' }));
+    setAxes((current) =>
+      current.map((axis) =>
+        axis.key === key ? { ...axis, midiNoteMap: null } : axis,
+      ),
+    );
+    setAnnouncement(
+      `${key.toUpperCase()} MIDI note map removed. The continuous low-to-high MIDI range is active.`,
+    );
+  }
+
   async function previewAxis(
     key: AxisKey | 'both',
     position: 0 | 0.5 | 1,
@@ -705,43 +1122,27 @@ export function App() {
       await engine.enable();
       setAudioEnabled(true);
       clearPreviewTimer();
-      const frequencies = Object.fromEntries(
-        axes.map((axis) => {
-          const domain = activeDomains[axis.key];
-          const value =
-            domain.minimum + position * (domain.maximum - domain.minimum);
-          return [
-            axis.key,
-            mapValueToPitch(
-              value,
-              domain,
-              axis.lowMidi,
-              axis.highMidi,
-              axis.inverted,
-            ).frequency,
-          ];
-        }),
-      ) as Record<AxisKey, number>;
+      const point = {
+        x:
+          activeDomains.x.minimum +
+          position * (activeDomains.x.maximum - activeDomains.x.minimum),
+        y:
+          activeDomains.y.minimum +
+          position * (activeDomains.y.maximum - activeDomains.y.minimum),
+      };
       const previewAxes = axes.map((axis) => ({
         ...axis,
         muted: key !== 'both' && axis.key !== key,
         solo: false,
       }));
-      engine.startSound({
-        frequencies,
-        axes: previewAxes,
-        masterVolume,
-        centreVoices,
-      });
+      engine.startSound(frameForPoint(point, previewAxes));
       setAudioSounding(true);
       dispatch({ type: 'STOP' });
       setAnnouncement(
         `${key === 'both' ? 'Both voices' : `${key.toUpperCase()} voice`} playing for calibration.`,
       );
       previewTimerRef.current = window.setTimeout(() => {
-        engine.fadeOut();
-        setAudioSounding(false);
-        setAnnouncement('Calibration sound finished.');
+        stopAllSound('Calibration sound finished.');
       }, 900);
     } catch {
       setAudioSounding(false);
@@ -754,8 +1155,7 @@ export function App() {
     if (!audioAvailable) return;
     if (!requested && !audioEnabled) return;
     if (!requested && explorerListeningMode === 'on-demand') {
-      engine.fadeOut();
-      setAudioSounding(false);
+      stopAllSound('Explorer sound stopped.');
       return;
     }
     try {
@@ -769,8 +1169,7 @@ export function App() {
       dispatch({ type: 'STOP' });
       if (explorerListeningMode !== 'sustained') {
         previewTimerRef.current = window.setTimeout(() => {
-          engine.fadeOut();
-          setAudioSounding(false);
+          stopAllSound('Explorer preview finished.');
         }, previewDuration * 1000);
       }
     } catch {
@@ -792,11 +1191,7 @@ export function App() {
 
   function enterExplorer(): void {
     savedTraversalProgressRef.current = progressRef.current;
-    clearPreviewTimer();
-    engine.fadeOut();
-    setAudioSounding(false);
-    if (transport.status === 'playing' || transport.status === 'holding')
-      dispatch({ type: 'STOP' });
+    stopAllSound('Sound stopped before keyboard exploration.');
     setExplorerPoint(curvePoint);
     setExplorerActive(true);
     plotRef.current?.setCurrentPoint(curvePoint);
@@ -806,9 +1201,7 @@ export function App() {
   }
 
   function exitExplorer(): void {
-    clearPreviewTimer();
-    engine.fadeOut();
-    setAudioSounding(false);
+    stopAllSound('Keyboard exploration ended.');
     setExplorerActive(false);
     const restored = interpolateCurve(
       curve.points,
@@ -869,9 +1262,7 @@ export function App() {
 
   function explorerControllerBlur(): void {
     if (audioSounding) {
-      clearPreviewTimer();
-      engine.fadeOut();
-      setAudioSounding(false);
+      stopAllSound('Explorer sound stopped when its controller lost focus.');
     }
   }
 
@@ -918,9 +1309,7 @@ export function App() {
 
   function replaceCurvePoints(points: Point[], message: string): void {
     if (points.length < 2 || points.length > MAX_POINTS) return;
-    clearPreviewTimer();
-    engine.fadeOut();
-    setAudioSounding(false);
+    stopAllSound('Editing the curve stopped all sound.');
     setCurve((current) => ({ ...current, source: 'editor', points }));
     progressRef.current = 0;
     dispatch({ type: 'RESET' });
@@ -936,25 +1325,33 @@ export function App() {
   }
 
   function resetApplication(): void {
-    clearPreviewTimer();
-    engine.fadeOut();
-    setAudioSounding(false);
+    stopAllSound('Resetting the application stopped all sound.');
     setCurve(DEFAULT_CURVE);
     setOriginalCurve(DEFAULT_CURVE);
     setSelectedPreset('Circle');
     setClosed(DEFAULT_CURVE.closed);
     setReverse(false);
-    setEqualScale(true);
     setParameterisation('arc-length');
     setDuration(20);
     setLoop(false);
     setAxes(DEFAULT_AXES);
+    midiRequestRef.current.x += 1;
+    midiRequestRef.current.y += 1;
+    setMidiErrors({ x: '', y: '' });
     setUseSharedDomain(false);
-    setCentreVoices(false);
+    setSonificationModeState(DEFAULT_PREFERENCES.sonificationMode);
+    setStereoWidth(DEFAULT_PREFERENCES.stereoWidth);
+    setMonoCompatibleState(DEFAULT_PREFERENCES.monoCompatible);
+    setYSignCue(DEFAULT_PREFERENCES.ySignCue);
+    setSpatialTimbre(DEFAULT_PREFERENCES.spatialTimbre);
+    setProgressCueSetting(DEFAULT_PREFERENCES.progressCueInterval);
+    setProgressCueVolume(DEFAULT_PREFERENCES.progressCueVolume);
+    setShortcutScope(DEFAULT_PREFERENCES.shortcutScope);
+    setRequireAltForLetters(DEFAULT_PREFERENCES.requireAltForLetters);
     setMasterVolume(0.18);
     setAnnouncementDetail('coordinates');
     setPlaybackAnnouncementInterval('off');
-    setFollowStep(SMALL_STEP);
+    setFollowStep(DEFAULT_PREFERENCES.visibleStep);
     setExplorerActive(false);
     setWasdEnabled(false);
     setExplorerListeningMode('short');
@@ -973,13 +1370,16 @@ export function App() {
   function downloadConfiguration(): void {
     const payload = {
       application: 'TIMUDS',
-      schemaVersion: 1,
+      schemaVersion: 2,
       curve: { ...curve, closed },
       traversal: { durationSeconds: duration, parameterisation, reverse, loop },
       mapping: {
+        sonificationMode,
         axes,
         sharedDomain: useSharedDomain,
-        centreVoices,
+        stereoWidth,
+        monoCompatible,
+        ySignCue,
         masterVolume,
       },
     };
@@ -997,7 +1397,7 @@ export function App() {
   }
 
   const stateLabel: Record<TransportState['status'], string> = {
-    silent: 'Silent. Audio has not started.',
+    ready: 'Ready. Audio has not started.',
     playing: 'Playing',
     holding: 'Holding at current point',
     stopped: 'Stopped',
@@ -1033,11 +1433,11 @@ export function App() {
             <small>2D sonification instrument</small>
           </a>
           <nav aria-label="Page sections">
-            <a href="#curve-source">Curve</a>
-            <a href="#axis-mapping">Mapping</a>
+            <a href="#curve-controls">Curve</a>
+            <a href="#sound-controls">Sound</a>
             <a href="#transport">Traversal</a>
-            <a href="#keyboard-explorer">Explorer</a>
-            <a href="#accessibility">Access</a>
+            <a href="#advanced-controls">Advanced</a>
+            <a href="#accessibility-controls">Accessibility</a>
           </nav>
         </div>
       </header>
@@ -1046,90 +1446,38 @@ export function App() {
         <section className="hero" id="top" aria-labelledby="page-title">
           <div className="hero-grid">
             <div className="hero-intro">
-              <p className="eyebrow">Two-dimensional curve sonification</p>
-              <h1 id="page-title">
-                <span>Listen around</span>
-                <span>the curve.</span>
-              </h1>
+              <p className="eyebrow">Curve player</p>
+              <h1 id="page-title">Hear a curve in two dimensions.</h1>
               <p className="hero-copy">
-                At each point, the x value sets one pitch and the y value sets
-                another. Playback follows the points in the order supplied.
+                Press Play to trace the curve. In the default Spatial voice, X
+                moves the sound from left to right and Y changes its pitch.
               </p>
-              <p className="hero-principle">
-                <span>X sets one voice. Y sets the other.</span>
-                <span>The clock advances through the point list.</span>
-              </p>
+              <button
+                type="button"
+                className="button-secondary keyboard-help-button"
+                onClick={(event) => openKeyboardHelp(event.currentTarget)}
+                aria-haspopup="dialog"
+              >
+                Keyboard help
+              </button>
               <div className="notice" role="note">
                 <span className="notice-icon" aria-hidden="true">
                   i
                 </span>
                 <p>
-                  Sound starts when you press Play, Hear current position or a
-                  calibration button. TIMUDS is an experimental prototype.
+                  Nothing plays until you ask it to. TIMUDS runs locally in this
+                  browser and remains an experimental instrument.
                 </p>
               </div>
             </div>
-            <figure className="hero-diagram">
-              <svg viewBox="0 0 560 440" role="img">
-                <title>Two-axis sonification signal diagram</title>
-                <desc>
-                  A point on a circular curve sends its horizontal position to
-                  an X voice and its vertical position to a Y voice. Both voices
-                  sound at the same time.
-                </desc>
-                <g className="diagram-grid" aria-hidden="true">
-                  <path d="M40 40H360M40 100H360M40 160H360M40 220H360M40 280H360M40 340H360" />
-                  <path d="M40 40V340M104 40V340M168 40V340M232 40V340M296 40V340M360 40V340" />
-                </g>
-                <g className="diagram-axes" aria-hidden="true">
-                  <path d="M40 190H360M200 40V340" />
-                  <text x="345" y="181">
-                    X
-                  </text>
-                  <text x="210" y="56">
-                    Y
-                  </text>
-                </g>
-                <path
-                  className="diagram-curve"
-                  d="M319 190c0 67-53 122-119 122S81 257 81 190 134 68 200 68s119 55 119 122Z"
-                  aria-hidden="true"
-                />
-                <g className="diagram-position" aria-hidden="true">
-                  <path d="M281 101V374M281 101H426" />
-                  <circle cx="281" cy="101" r="9" />
-                  <rect x="252" y="362" width="58" height="25" />
-                  <text x="281" y="380" textAnchor="middle">
-                    +0.68
-                  </text>
-                  <rect x="414" y="88" width="58" height="25" />
-                  <text x="443" y="106" textAnchor="middle">
-                    +0.73
-                  </text>
-                </g>
-                <g className="diagram-signal" aria-hidden="true">
-                  <path d="M38 408c18-28 36 28 54 0s36 28 54 0 36 28 54 0 36 28 54 0 36 28 54 0" />
-                  <path d="M500 52c-25 14 25 28 0 42s25 28 0 42-25 28 0 42 25 28 0 42-25 28 0 42" />
-                  <text x="40" y="385">
-                    X VOICE / WARM
-                  </text>
-                  <text x="486" y="330" transform="rotate(-90 486 330)">
-                    Y VOICE / REED
-                  </text>
-                </g>
-                <text className="diagram-output" x="396" y="408">
-                  SIMULTANEOUS OUTPUT
-                </text>
-              </svg>
-              <figcaption>
-                <span>Point shown: x +0.68, y +0.73</span>
-                <span>Both voices sound at once</span>
-              </figcaption>
-            </figure>
           </div>
         </section>
 
-        <section className="workspace" aria-labelledby="workspace-title">
+        <section
+          ref={workspaceRef}
+          className="workspace"
+          aria-labelledby="workspace-title"
+        >
           <div className="section-heading">
             <div>
               <p className="eyebrow">Instrument panel</p>
@@ -1162,7 +1510,7 @@ export function App() {
                 currentPoint={displayedPoint}
                 closed={closed}
                 reverse={reverse}
-                equalScale={equalScale}
+                equalScale
                 drawing={drawing}
                 drawingPoints={drawingPoints}
                 onDrawPoint={(point) =>
@@ -1184,16 +1532,6 @@ export function App() {
                 }
               />
               <div className="plot-options check-row">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={equalScale}
-                    onChange={(event) =>
-                      setEqualScale(event.currentTarget.checked)
-                    }
-                  />{' '}
-                  Equal axis scale
-                </label>
                 <span>Positive Y points upwards.</span>
               </div>
             </div>
@@ -1206,117 +1544,167 @@ export function App() {
             >
               <p className="readout-kicker">Live mapping</p>
               <h3 id="readout-title">Current position</h3>
-              <dl>
-                <div>
-                  <dt>Mode</dt>
-                  <dd>
-                    {explorerActive ? 'Exploring plane' : 'Following curve'}
-                  </dd>
+              <dl className="position-summary">
+                <div className="coordinate-x">
+                  <dt>X</dt>
+                  <dd>{formatNumber(displayedPoint.x)}</dd>
                 </div>
-                <div>
-                  <dt>Transport state</dt>
-                  <dd>{stateLabel[transport.status]}</dd>
+                <div className="coordinate-y">
+                  <dt>Y</dt>
+                  <dd>{formatNumber(displayedPoint.y)}</dd>
                 </div>
                 <div>
                   <dt>Progress</dt>
                   <dd>{(transport.progress * 100).toFixed(1)}%</dd>
                 </div>
                 <div>
-                  <dt>Elapsed</dt>
+                  <dt>Mode</dt>
                   <dd>
-                    {(transport.progress * duration).toFixed(2)} s of{' '}
-                    {duration.toFixed(0)} s
+                    {sonificationMode === 'spatial'
+                      ? 'Spatial voice'
+                      : 'Axis voices'}
                   </dd>
                 </div>
                 <div>
-                  <dt>Source point</dt>
+                  <dt>Navigation</dt>
                   <dd>
-                    Nearest point {nearestPointIndex + 1} of{' '}
-                    {curve.points.length}
-                  </dd>
-                </div>
-                <div className="coordinate-x">
-                  <dt>X value</dt>
-                  <dd>{formatNumber(displayedPoint.x)}</dd>
-                </div>
-                <div className="coordinate-x">
-                  <dt>X note</dt>
-                  <dd>{currentPitches.x.noteName}</dd>
-                </div>
-                <div className="coordinate-x">
-                  <dt>X frequency</dt>
-                  <dd>{currentPitches.x.frequency.toFixed(1)} Hz</dd>
-                </div>
-                <div className="coordinate-y">
-                  <dt>Y value</dt>
-                  <dd>{formatNumber(displayedPoint.y)}</dd>
-                </div>
-                <div className="coordinate-y">
-                  <dt>Y note</dt>
-                  <dd>{currentPitches.y.noteName}</dd>
-                </div>
-                <div className="coordinate-y">
-                  <dt>Y frequency</dt>
-                  <dd>{currentPitches.y.frequency.toFixed(1)} Hz</dd>
-                </div>
-                <div>
-                  <dt>X domain</dt>
-                  <dd>
-                    {formatNumber(activeDomains.x.minimum)} to{' '}
-                    {formatNumber(activeDomains.x.maximum)}
+                    {explorerActive ? 'Exploring plane' : 'Following curve'}
                   </dd>
                 </div>
                 <div>
-                  <dt>Y domain</dt>
+                  <dt>Y sign</dt>
                   <dd>
-                    {formatNumber(activeDomains.y.minimum)} to{' '}
-                    {formatNumber(activeDomains.y.maximum)}
+                    {displayedPoint.y < 0
+                      ? 'Negative'
+                      : displayedPoint.y > 0
+                        ? 'Positive'
+                        : 'Zero'}
                   </dd>
                 </div>
                 <div>
-                  <dt>Direction</dt>
-                  <dd>{reverse ? 'Reverse' : 'Forward'}</dd>
-                </div>
-                <div>
-                  <dt>Curve</dt>
-                  <dd>{closed ? 'Closed' : 'Open'}</dd>
-                </div>
-                <div>
-                  <dt>Audio sounding</dt>
-                  <dd>{audioSounding ? 'Yes' : 'No'}</dd>
-                </div>
-                <div>
-                  <dt>Audio enabled</dt>
-                  <dd>
-                    {!audioAvailable
-                      ? 'Unavailable'
-                      : audioEnabled
-                        ? 'Yes'
-                        : 'No'}
-                  </dd>
-                </div>
-                {axes.map((axis) => (
-                  <div key={`${axis.key}-voice-state`}>
-                    <dt>{axis.key.toUpperCase()} voice state</dt>
-                    <dd>
-                      {axis.muted ? 'Muted' : 'Not muted'},{' '}
-                      {axis.solo ? 'soloed' : 'not soloed'}
-                    </dd>
-                  </div>
-                ))}
-                <div>
-                  <dt>Traversal position</dt>
-                  <dd>
-                    {explorerActive
-                      ? 'Saved while plane exploration is active'
-                      : 'Current curve position'}
-                  </dd>
+                  <dt>Sound</dt>
+                  <dd>{stateLabel[transport.status]}</dd>
                 </div>
               </dl>
-              <p className="mapping-note">
-                Pitch follows the signed value on each axis. Gain changes the
-                listening level.
-              </p>
+              <details className="technical-readout">
+                <summary>Technical details</summary>
+                <dl>
+                  <div>
+                    <dt>Mode</dt>
+                    <dd>
+                      {explorerActive ? 'Exploring plane' : 'Following curve'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Transport state</dt>
+                    <dd>{stateLabel[transport.status]}</dd>
+                  </div>
+                  <div>
+                    <dt>Progress</dt>
+                    <dd>{(transport.progress * 100).toFixed(1)}%</dd>
+                  </div>
+                  <div>
+                    <dt>Elapsed</dt>
+                    <dd>
+                      {(transport.progress * duration).toFixed(2)} s of{' '}
+                      {duration.toFixed(0)} s
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Source point</dt>
+                    <dd>
+                      Nearest point {nearestPointIndex + 1} of{' '}
+                      {curve.points.length}
+                    </dd>
+                  </div>
+                  <div className="coordinate-x">
+                    <dt>X value</dt>
+                    <dd>{formatNumber(displayedPoint.x)}</dd>
+                  </div>
+                  <div className="coordinate-x">
+                    <dt>X note</dt>
+                    <dd>{currentPitches.x.noteName}</dd>
+                  </div>
+                  <div className="coordinate-x">
+                    <dt>X frequency</dt>
+                    <dd>{currentPitches.x.frequency.toFixed(1)} Hz</dd>
+                  </div>
+                  <div className="coordinate-y">
+                    <dt>Y value</dt>
+                    <dd>{formatNumber(displayedPoint.y)}</dd>
+                  </div>
+                  <div className="coordinate-y">
+                    <dt>Y note</dt>
+                    <dd>{currentPitches.y.noteName}</dd>
+                  </div>
+                  <div className="coordinate-y">
+                    <dt>Y frequency</dt>
+                    <dd>{currentPitches.y.frequency.toFixed(1)} Hz</dd>
+                  </div>
+                  <div>
+                    <dt>X domain</dt>
+                    <dd>
+                      {formatNumber(activeDomains.x.minimum)} to{' '}
+                      {formatNumber(activeDomains.x.maximum)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Y domain</dt>
+                    <dd>
+                      {formatNumber(activeDomains.y.minimum)} to{' '}
+                      {formatNumber(activeDomains.y.maximum)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Direction</dt>
+                    <dd>{reverse ? 'Reverse' : 'Forward'}</dd>
+                  </div>
+                  <div>
+                    <dt>Curve</dt>
+                    <dd>{closed ? 'Closed' : 'Open'}</dd>
+                  </div>
+                  <div>
+                    <dt>Audio sounding</dt>
+                    <dd>{audioSounding ? 'Yes' : 'No'}</dd>
+                  </div>
+                  <div>
+                    <dt>Audio enabled</dt>
+                    <dd>
+                      {!audioAvailable
+                        ? 'Unavailable'
+                        : audioEnabled
+                          ? 'Yes'
+                          : 'No'}
+                    </dd>
+                  </div>
+                  {axes.map((axis) => (
+                    <div key={`${axis.key}-voice-state`}>
+                      <dt>{axis.key.toUpperCase()} voice</dt>
+                      <dd>
+                        {INSTRUMENTS[axis.timbre].label}.{' '}
+                        {axis.midiNoteMap
+                          ? `${axis.midiNoteMap.fileName} MIDI map with ${axis.midiNoteMap.notes.length} ${axis.midiNoteMap.notes.length === 1 ? 'note' : 'notes'}.`
+                          : `Continuous MIDI ${axis.lowMidi} to ${axis.highMidi}.`}{' '}
+                        {axis.muted ? 'Muted' : 'Not muted'},{' '}
+                        {axis.solo ? 'soloed' : 'not soloed'}
+                      </dd>
+                    </div>
+                  ))}
+                  <div>
+                    <dt>Traversal position</dt>
+                    <dd>
+                      {explorerActive
+                        ? 'Saved while plane exploration is active'
+                        : 'Current curve position'}
+                    </dd>
+                  </div>
+                </dl>
+                <p className="mapping-note">
+                  Pitch follows the signed value on each axis. A loaded MIDI map
+                  quantises that axis to its imported note palette. Gain changes
+                  the listening level.
+                </p>
+              </details>
             </aside>
           </div>
 
@@ -1328,8 +1716,7 @@ export function App() {
           >
             <div className="panel-heading">
               <div>
-                <p className="step-label">01 · Traversal</p>
-                <h3 id="transport-title">Move through the ordered curve</h3>
+                <h3 id="transport-title">Play the curve</h3>
               </div>
               <span className={`state-chip state-${transport.status}`}>
                 {stateLabel[transport.status]}
@@ -1370,6 +1757,14 @@ export function App() {
               </button>
               <button type="button" onClick={resetToStart}>
                 <span aria-hidden="true">↺ </span>Reset traversal
+              </button>
+              <button
+                type="button"
+                className="button-secondary"
+                onClick={(event) => openKeyboardHelp(event.currentTarget)}
+                aria-haspopup="dialog"
+              >
+                Keyboard help
               </button>
             </div>
             <p className="fine-print">
@@ -1416,12 +1811,12 @@ export function App() {
                   id="follow-step"
                   value={followStep}
                   onChange={(event) =>
-                    setFollowStep(Number(event.currentTarget.value))
+                    setFollowStep(
+                      Number(event.currentTarget.value) as 0.01 | 0.1,
+                    )
                   }
                 >
-                  <option value="0.001">0.1%</option>
                   <option value="0.01">1%</option>
-                  <option value="0.05">5%</option>
                   <option value="0.1">10%</option>
                 </select>
               </div>
@@ -1550,617 +1945,919 @@ export function App() {
             </details>
           </section>
 
-          <TwoDimensionalExplorer
-            active={explorerActive}
-            point={explorerPoint}
-            domains={explorerDomains}
-            steps={explorerStepOptions}
-            stepName={explorerStepName}
-            customStep={customExplorerStep}
-            wasdEnabled={wasdEnabled}
-            listeningMode={explorerListeningMode}
-            previewDuration={previewDuration}
-            audioAvailable={audioAvailable}
-            onEnter={enterExplorer}
-            onExit={exitExplorer}
-            onControllerKeyDown={explorerControllerKeyDown}
-            onControllerBlur={explorerControllerBlur}
-            onCoordinateChange={changeExplorerCoordinate}
-            onStepNameChange={setExplorerStepName}
-            onCustomStepChange={setCustomExplorerStep}
-            onWasdChange={setWasdEnabled}
-            onListeningModeChange={setExplorerListeningMode}
-            onPreviewDurationChange={setPreviewDuration}
-            onHear={() => void soundExplorerPoint(explorerPoint, true)}
-            onAddToCurve={addExplorerPointToCurve}
-            onMoveTraversalToNearest={moveTraversalToNearest}
-          />
-
-          <section
-            id="curve-source"
-            className="panel"
-            aria-labelledby="source-title"
-          >
-            <div className="panel-heading">
-              <div>
-                <p className="step-label">03 · Curve data</p>
-                <h3 id="source-title">Choose or create an ordered curve</h3>
-              </div>
-            </div>
-            {importError && (
-              <div
-                ref={errorSummaryRef}
-                className="error-summary"
-                role="alert"
-                tabIndex={-1}
-                aria-labelledby="error-title"
+          <details className="workspace-disclosure" id="curve-controls">
+            <summary>Curve</summary>
+            <div className="disclosure-content">
+              <section
+                id="curve-source"
+                className="panel"
+                aria-labelledby="source-title"
               >
-                <h4 id="error-title">Coordinate data needs attention</h4>
-                <p>{importError}</p>
-                <a
-                  href={
-                    importErrorTarget === 'file'
-                      ? '#coordinate-file'
-                      : importErrorTarget === 'drawing'
-                        ? '#drawing-controls'
-                        : '#coordinate-text'
-                  }
-                >
-                  {importErrorTarget === 'file'
-                    ? 'Review the file input'
-                    : importErrorTarget === 'drawing'
-                      ? 'Review the drawing controls'
-                      : 'Review the coordinate input'}
-                </a>
-              </div>
-            )}
-            <div className="source-grid">
-              <fieldset>
-                <legend>Preset</legend>
-                <label htmlFor="preset">Curve preset</label>
-                <select
-                  id="preset"
-                  value={selectedPreset}
-                  onChange={(event) =>
-                    setSelectedPreset(event.currentTarget.value as PresetName)
-                  }
-                >
-                  {PRESET_NAMES.map((name) => (
-                    <option key={name}>{name}</option>
-                  ))}
-                </select>
-                <button type="button" onClick={loadPreset}>
-                  Load preset
-                </button>
-              </fieldset>
-              <fieldset>
-                <legend>Curve settings</legend>
-                <div className="stacked-checks">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={closed}
-                      onChange={(event) => {
-                        setClosed(event.currentTarget.checked);
-                        stopSound('Curve closure changed. Audio stopped.');
-                      }}
-                    />{' '}
-                    Closed curve
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={reverse}
-                      onChange={(event) => {
-                        setReverse(event.currentTarget.checked);
-                        stopSound(
-                          'Traversal direction changed. Audio stopped.',
-                        );
-                      }}
-                    />{' '}
-                    Reverse traversal direction
-                  </label>
+                <div className="panel-heading">
+                  <div>
+                    <p className="step-label">03 · Curve data</p>
+                    <h3 id="source-title">Choose or create an ordered curve</h3>
+                  </div>
                 </div>
-                <button type="button" onClick={() => applyCurve(originalCurve)}>
-                  Reset source curve
-                </button>
-                <button
-                  type="button"
-                  className="danger-button"
-                  onClick={resetApplication}
-                >
-                  Reset the whole application
-                </button>
-              </fieldset>
-            </div>
-            <details className="import-details">
-              <summary>Paste or upload coordinate data</summary>
-              <div className="details-content">
-                <div className="format-row">
-                  <label htmlFor="coordinate-format">Coordinate format</label>
-                  <select
-                    id="coordinate-format"
-                    value={format}
-                    onChange={(event) =>
-                      setFormat(event.currentTarget.value as CoordinateFormat)
-                    }
+                {importError && (
+                  <div
+                    ref={errorSummaryRef}
+                    className="error-summary"
+                    role="alert"
+                    tabIndex={-1}
+                    aria-labelledby="error-title"
                   >
-                    <option value="auto">Detect CSV or JSON</option>
-                    <option value="csv">CSV</option>
-                    <option value="json">JSON</option>
-                  </select>
-                </div>
-                <label htmlFor="coordinate-text">Coordinate data</label>
-                <textarea
-                  id="coordinate-text"
-                  value={coordinateText}
-                  onChange={(event) =>
-                    setCoordinateText(event.currentTarget.value)
-                  }
-                  aria-invalid={
-                    importErrorTarget === 'text' && Boolean(importError)
-                  }
-                  aria-errormessage={
-                    importErrorTarget === 'text' && importError
-                      ? 'coordinate-error'
-                      : undefined
-                  }
-                  aria-describedby={
-                    importErrorTarget === 'text'
-                      ? 'coordinate-help coordinate-error'
-                      : 'coordinate-help'
-                  }
-                  rows={7}
-                  spellCheck={false}
-                />
-                <p id="coordinate-help" className="fine-print">
-                  CSV may include an x,y header. JSON may be [[x,y], …] or [
-                  {`{"x":x,"y":y}`}, …]. Point count: 2–
-                  {MAX_POINTS.toLocaleString('en-GB')}. Every value must be
-                  finite.
-                </p>
-                <span id="coordinate-error" className="sr-only">
-                  {importError}
-                </span>
-                <div className="button-row">
-                  <button type="button" onClick={() => importText('text')}>
-                    Import pasted coordinates
-                  </button>
-                </div>
-                <label htmlFor="coordinate-file">
-                  Or choose a local .csv or .json file
-                </label>
-                <input
-                  id="coordinate-file"
-                  type="file"
-                  accept=".csv,.json,text/csv,application/json"
-                  aria-invalid={
-                    importErrorTarget === 'file' && Boolean(importError)
-                  }
-                  aria-errormessage={
-                    importErrorTarget === 'file' && importError
-                      ? 'coordinate-error'
-                      : undefined
-                  }
-                  aria-describedby={
-                    importErrorTarget === 'file'
-                      ? 'file-help coordinate-error'
-                      : 'file-help'
-                  }
-                  onChange={(event) => void fileChanged(event)}
-                />
-                <p id="file-help" className="fine-print">
-                  Files stay in your browser and must be no more than{' '}
-                  {MAX_FILE_BYTES / 1_000_000} MB.
-                </p>
-              </div>
-            </details>
-            <details open={drawing}>
-              <summary>Freehand drawing</summary>
-              <div
-                id="drawing-controls"
-                className="details-content"
-                tabIndex={-1}
-              >
-                <p>
-                  Draw inside the plot with a pointer, pen or touch. The point
-                  editor below provides the same practical authoring steps
-                  without drawing.
-                </p>
-                <div className="button-row">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      stopSound();
-                      setDrawing(true);
-                      setDrawingPoints([]);
-                      setImportError('');
-                      setImportErrorTarget('text');
-                    }}
-                  >
-                    Start drawing
-                  </button>
-                  <button
-                    type="button"
-                    onClick={finishDrawing}
-                    disabled={!drawing}
-                  >
-                    Finish drawing
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDrawingPoints((current) => current.slice(0, -1))
-                    }
-                    disabled={!drawing || drawingPoints.length === 0}
-                  >
-                    Undo last sampled point
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDrawingPoints([])}
-                    disabled={!drawing || drawingPoints.length === 0}
-                  >
-                    Clear stroke
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDrawing(false);
-                      setDrawingPoints([]);
-                      setAnnouncement('Drawing cancelled.');
-                    }}
-                    disabled={!drawing}
-                  >
-                    Cancel
-                  </button>
-                </div>
-                {drawing && (
-                  <p className="drawing-status" role="status">
-                    Drawing mode active: {drawingPoints.length} raw points
-                    captured.
-                  </p>
+                    <h4 id="error-title">Coordinate data needs attention</h4>
+                    <p>{importError}</p>
+                    <a
+                      href={
+                        importErrorTarget === 'file'
+                          ? '#coordinate-file'
+                          : importErrorTarget === 'drawing'
+                            ? '#drawing-controls'
+                            : '#coordinate-text'
+                      }
+                    >
+                      {importErrorTarget === 'file'
+                        ? 'Review the file input'
+                        : importErrorTarget === 'drawing'
+                          ? 'Review the drawing controls'
+                          : 'Review the coordinate input'}
+                    </a>
+                  </div>
                 )}
-              </div>
-            </details>
-            <div className="curve-summary" aria-labelledby="summary-title">
-              <h4 id="summary-title">Curve summary</h4>
-              <dl>
-                <div>
-                  <dt>Name/source</dt>
-                  <dd>
-                    {curve.name} · {curve.source}
-                  </dd>
+                <div className="source-grid">
+                  <fieldset>
+                    <legend>Preset</legend>
+                    <label htmlFor="preset">Curve preset</label>
+                    <select
+                      id="preset"
+                      value={selectedPreset}
+                      onChange={(event) =>
+                        setSelectedPreset(
+                          event.currentTarget.value as PresetName,
+                        )
+                      }
+                    >
+                      {PRESET_NAMES.map((name) => (
+                        <option key={name}>{name}</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={loadPreset}>
+                      Load preset
+                    </button>
+                  </fieldset>
+                  <fieldset>
+                    <legend>Curve settings</legend>
+                    <div className="stacked-checks">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={closed}
+                          onChange={(event) => {
+                            setClosed(event.currentTarget.checked);
+                            stopSound('Curve closure changed. Audio stopped.');
+                          }}
+                        />{' '}
+                        Closed curve
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={reverse}
+                          onChange={(event) => {
+                            setReverse(event.currentTarget.checked);
+                            stopSound(
+                              'Traversal direction changed. Audio stopped.',
+                            );
+                          }}
+                        />{' '}
+                        Reverse traversal direction
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => applyCurve(originalCurve)}
+                    >
+                      Reset source curve
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-button"
+                      onClick={resetApplication}
+                    >
+                      Reset the whole application
+                    </button>
+                  </fieldset>
                 </div>
-                <div>
-                  <dt>Points</dt>
-                  <dd>{curve.points.length.toLocaleString('en-GB')}</dd>
+                <details className="import-details">
+                  <summary>Paste or upload coordinate data</summary>
+                  <div className="details-content">
+                    <div className="format-row">
+                      <label htmlFor="coordinate-format">
+                        Coordinate format
+                      </label>
+                      <select
+                        id="coordinate-format"
+                        value={format}
+                        onChange={(event) =>
+                          setFormat(
+                            event.currentTarget.value as CoordinateFormat,
+                          )
+                        }
+                      >
+                        <option value="auto">Detect CSV or JSON</option>
+                        <option value="csv">CSV</option>
+                        <option value="json">JSON</option>
+                      </select>
+                    </div>
+                    <label htmlFor="coordinate-text">Coordinate data</label>
+                    <textarea
+                      id="coordinate-text"
+                      value={coordinateText}
+                      onChange={(event) =>
+                        setCoordinateText(event.currentTarget.value)
+                      }
+                      aria-invalid={
+                        importErrorTarget === 'text' && Boolean(importError)
+                      }
+                      aria-errormessage={
+                        importErrorTarget === 'text' && importError
+                          ? 'coordinate-error'
+                          : undefined
+                      }
+                      aria-describedby={
+                        importErrorTarget === 'text'
+                          ? 'coordinate-help coordinate-error'
+                          : 'coordinate-help'
+                      }
+                      rows={7}
+                      spellCheck={false}
+                    />
+                    <p id="coordinate-help" className="fine-print">
+                      CSV may include an x,y header. JSON may be [[x,y], …] or [
+                      {`{"x":x,"y":y}`}, …]. Point count: 2–
+                      {MAX_POINTS.toLocaleString('en-GB')}. Every value must be
+                      finite.
+                    </p>
+                    <span id="coordinate-error" className="sr-only">
+                      {importError}
+                    </span>
+                    <div className="button-row">
+                      <button type="button" onClick={() => importText('text')}>
+                        Import pasted coordinates
+                      </button>
+                    </div>
+                    <label htmlFor="coordinate-file">
+                      Or choose a local .csv or .json file
+                    </label>
+                    <input
+                      id="coordinate-file"
+                      type="file"
+                      accept=".csv,.json,text/csv,application/json"
+                      aria-invalid={
+                        importErrorTarget === 'file' && Boolean(importError)
+                      }
+                      aria-errormessage={
+                        importErrorTarget === 'file' && importError
+                          ? 'coordinate-error'
+                          : undefined
+                      }
+                      aria-describedby={
+                        importErrorTarget === 'file'
+                          ? 'file-help coordinate-error'
+                          : 'file-help'
+                      }
+                      onChange={(event) => void fileChanged(event)}
+                    />
+                    <p id="file-help" className="fine-print">
+                      Files stay in your browser and must be no more than{' '}
+                      {MAX_FILE_BYTES / 1_000_000} MB.
+                    </p>
+                  </div>
+                </details>
+                <details open={drawing}>
+                  <summary>Freehand drawing</summary>
+                  <div
+                    id="drawing-controls"
+                    className="details-content"
+                    tabIndex={-1}
+                  >
+                    <p>
+                      Draw inside the plot with a pointer, pen or touch. The
+                      point editor below provides the same practical authoring
+                      steps without drawing.
+                    </p>
+                    <div className="button-row">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          stopSound();
+                          setDrawing(true);
+                          setDrawingPoints([]);
+                          setImportError('');
+                          setImportErrorTarget('text');
+                        }}
+                      >
+                        Start drawing
+                      </button>
+                      <button
+                        type="button"
+                        onClick={finishDrawing}
+                        disabled={!drawing}
+                      >
+                        Finish drawing
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDrawingPoints((current) => current.slice(0, -1))
+                        }
+                        disabled={!drawing || drawingPoints.length === 0}
+                      >
+                        Undo last sampled point
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDrawingPoints([])}
+                        disabled={!drawing || drawingPoints.length === 0}
+                      >
+                        Clear stroke
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDrawing(false);
+                          setDrawingPoints([]);
+                          setAnnouncement('Drawing cancelled.');
+                        }}
+                        disabled={!drawing}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {drawing && (
+                      <p className="drawing-status" role="status">
+                        Drawing mode active: {drawingPoints.length} raw points
+                        captured.
+                      </p>
+                    )}
+                  </div>
+                </details>
+                <div className="curve-summary" aria-labelledby="summary-title">
+                  <h4 id="summary-title">Curve summary</h4>
+                  <dl>
+                    <div>
+                      <dt>Name/source</dt>
+                      <dd>
+                        {curve.name} · {curve.source}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Points</dt>
+                      <dd>{curve.points.length.toLocaleString('en-GB')}</dd>
+                    </div>
+                    <div>
+                      <dt>X range</dt>
+                      <dd>
+                        {formatNumber(automaticDomains.x.minimum)} to{' '}
+                        {formatNumber(automaticDomains.x.maximum)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Y range</dt>
+                      <dd>
+                        {formatNumber(automaticDomains.y.minimum)} to{' '}
+                        {formatNumber(automaticDomains.y.maximum)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Polyline length</dt>
+                      <dd>{formatNumber(geometry.totalLength)}</dd>
+                    </div>
+                    <div>
+                      <dt>Closure</dt>
+                      <dd>
+                        {closed
+                          ? 'Closed; final point returns to first'
+                          : 'Open'}
+                      </dd>
+                    </div>
+                  </dl>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={downloadConfiguration}
+                  >
+                    Download curve and mapping JSON
+                  </button>
                 </div>
-                <div>
-                  <dt>X range</dt>
-                  <dd>
-                    {formatNumber(automaticDomains.x.minimum)} to{' '}
-                    {formatNumber(automaticDomains.x.maximum)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Y range</dt>
-                  <dd>
-                    {formatNumber(automaticDomains.y.minimum)} to{' '}
-                    {formatNumber(automaticDomains.y.maximum)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Polyline length</dt>
-                  <dd>{formatNumber(geometry.totalLength)}</dd>
-                </div>
-                <div>
-                  <dt>Closure</dt>
-                  <dd>
-                    {closed ? 'Closed; final point returns to first' : 'Open'}
-                  </dd>
-                </div>
-              </dl>
-              <button
-                type="button"
-                className="button-secondary"
-                onClick={downloadConfiguration}
-              >
-                Download curve and mapping JSON
-              </button>
-            </div>
-            <SourcePointEditor
-              points={curve.points}
-              closed={closed}
-              onMoveToPoint={moveToSourcePoint}
-              onReplacePoints={replaceCurvePoints}
-              onAnnounce={setAnnouncement}
-            />
-          </section>
-
-          <section
-            id="axis-mapping"
-            className="panel"
-            aria-labelledby="mapping-title"
-          >
-            <div className="panel-heading">
-              <div>
-                <p className="step-label">04 · Axis mapping</p>
-                <h3 id="mapping-title">Map signed values to pitch</h3>
-              </div>
-              <div className="button-row">
-                <button
-                  type="button"
-                  onClick={() => void previewAxis('both', 0.5)}
-                  disabled={!audioAvailable}
-                >
-                  Test both voices
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void soundExplorerPoint(displayedPoint, true)}
-                  disabled={!audioAvailable}
-                >
-                  Hear current position
-                </button>
-              </div>
-            </div>
-            <p>
-              The default pitch range is MIDI 48 to 72 (C3 to C5). Fractional
-              notes make pitch changes continuous; larger signed values give
-              higher pitches unless the axis is inverted.
-            </p>
-            <div className="global-audio-controls">
-              <label htmlFor="master-volume">
-                Master volume: {Math.round(masterVolume * 100)}%
-              </label>
-              <input
-                id="master-volume"
-                type="range"
-                min="0"
-                max="0.4"
-                step="0.01"
-                value={masterVolume}
-                onChange={(event) =>
-                  setMasterVolume(event.currentTarget.valueAsNumber)
-                }
-              />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={useSharedDomain}
-                  onChange={(event) =>
-                    setUseSharedDomain(event.currentTarget.checked)
-                  }
-                />{' '}
-                Use one shared numeric domain for X and Y
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={centreVoices}
-                  onChange={(event) =>
-                    setCentreVoices(event.currentTarget.checked)
-                  }
-                />{' '}
-                Centre both voices (mono-friendly)
-              </label>
-            </div>
-            <div className="axis-grid">
-              {axes.map((axis) => (
-                <AxisControls
-                  key={axis.key}
-                  config={axis}
-                  domain={activeDomains[axis.key]}
-                  onChange={(next) => updateAxis(axis.key, next)}
-                  onPreview={(position) => void previewAxis(axis.key, position)}
-                  onTest={() => void previewAxis(axis.key, 0.5)}
+                <SourcePointEditor
+                  points={curve.points}
+                  closed={closed}
+                  onMoveToPoint={moveToSourcePoint}
+                  onReplacePoints={replaceCurvePoints}
+                  onAnnounce={setAnnouncement}
                 />
-              ))}
-            </div>
-          </section>
-        </section>
-
-        <section className="explanation" aria-labelledby="how-title">
-          <div>
-            <p className="eyebrow">Method</p>
-            <h2 id="how-title">Mapping</h2>
-          </div>
-          <div className="method-grid">
-            <article>
-              <span>X</span>
-              <h3>X voice</h3>
-              <p>
-                The x coordinate sets the pitch of the warm synthetic voice.
-              </p>
-            </article>
-            <article>
-              <span>Y</span>
-              <h3>Y voice</h3>
-              <p>
-                The y coordinate sets the pitch of the reed-like synthetic
-                voice. Each axis has its own numeric domain.
-              </p>
-            </article>
-            <article>
-              <span>t</span>
-              <h3>Playback clock</h3>
-              <p>
-                The audio clock measures the selected duration. The points stay
-                in the order supplied.
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <section
-          id="accessibility"
-          className="access-section"
-          aria-labelledby="access-title"
-        >
-          <div>
-            <p className="eyebrow">Access</p>
-            <h2 id="access-title">Access notes</h2>
-          </div>
-          <div className="access-grid">
-            <div>
-              <h3>Audio control</h3>
-              <p>
-                Sound begins after Play, Hear current position or a calibration
-                button is pressed. Stop all sound is always visible once audio
-                has been enabled.
-              </p>
-            </div>
-            <div>
-              <h3>Keyboard and screen readers</h3>
-              <p>
-                The controls use standard HTML elements. Manual explorer
-                announcements are coalesced. Timed coordinate announcements are
-                off by default.
-              </p>
-            </div>
-            <div>
-              <h3>Text readout</h3>
-              <p>
-                The current-position section remains selectable without audio.
-                It includes coordinates, notes, frequencies, domains, voice
-                states and traversal state.
-              </p>
-            </div>
-            <div>
-              <h3>Mono output and motion</h3>
-              <p>
-                The voices use different timbres and can be centred. The reduced
-                motion setting removes interface transitions.
-              </p>
-            </div>
-          </div>
-          <details className="keyboard-reference">
-            <summary>Complete keyboard reference</summary>
-            <div className="details-content keyboard-help-grid">
-              <section aria-labelledby="keyboard-general">
-                <h3 id="keyboard-general">General page navigation</h3>
-                <p>
-                  Use <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> to move
-                  between controls. Use <kbd>Enter</kbd> or <kbd>Space</kbd> on
-                  native buttons. The first Tab reveals skip links.
-                </p>
-              </section>
-              <section aria-labelledby="keyboard-follow">
-                <h3 id="keyboard-follow">Follow-curve navigation</h3>
-                <p>
-                  On Position along curve, <kbd>Left</kbd> and <kbd>Right</kbd>{' '}
-                  change progress. <kbd>Home</kbd> selects the start and{' '}
-                  <kbd>End</kbd> selects the end or closing seam. Named buttons
-                  provide the same actions.
-                </p>
-              </section>
-              <section aria-labelledby="keyboard-plane">
-                <h3 id="keyboard-plane">Two-dimensional plane navigation</h3>
-                <p>
-                  Enter the mode, then focus stays on the bounded controller.
-                  <kbd>Left</kbd>/<kbd>Right</kbd> change x and <kbd>Up</kbd>/
-                  <kbd>Down</kbd> change numeric y. <kbd>Shift</kbd> uses the
-                  coarse step. <kbd>Escape</kbd> returns to the curve.{' '}
-                  <kbd>Tab</kbd> leaves normally.
-                </p>
-              </section>
-              <section aria-labelledby="keyboard-wasd">
-                <h3 id="keyboard-wasd">Optional WASD controls</h3>
-                <p>
-                  WASD starts off. When enabled, it works only on the focused
-                  plane controller: <kbd>W</kbd> increases y, <kbd>A</kbd>{' '}
-                  decreases x, <kbd>S</kbd> decreases y and <kbd>D</kbd>{' '}
-                  increases x.
-                </p>
-              </section>
-              <section aria-labelledby="keyboard-safety">
-                <h3 id="keyboard-safety">Audio-safety control</h3>
-                <p>
-                  When audio is sounding, <kbd>Escape</kbd> fades it outside
-                  editable fields and dialogs. The visible Stop all sound button
-                  performs the same safety action.
-                </p>
-              </section>
-              <section aria-labelledby="keyboard-screen-reader">
-                <h3 id="keyboard-screen-reader">Screen-reader note</h3>
-                <p>
-                  Browse and Quick Nav modes may retain arrow or character keys.
-                  The native position, x and y controls remain available. You do
-                  not need to turn off your screen reader.
-                </p>
               </section>
             </div>
           </details>
-          <details className="definitions">
-            <summary>Terms used in TIMUDS</summary>
-            <dl className="term-list">
-              <div>
-                <dt>Sonification</dt>
-                <dd>Using sound to present information from data.</dd>
-              </div>
-              <div>
-                <dt>Axis domain</dt>
-                <dd>The minimum and maximum numeric values for one axis.</dd>
-              </div>
-              <div>
-                <dt>Pitch mapping</dt>
-                <dd>The rule that converts a coordinate into a frequency.</dd>
-              </div>
-              <div>
-                <dt>Arc-length traversal</dt>
-                <dd>Movement at an even spatial speed along the curve.</dd>
-              </div>
-              <div>
-                <dt>Open curve</dt>
-                <dd>A curve that ends at its final supplied point.</dd>
-              </div>
-              <div>
-                <dt>Closed curve</dt>
-                <dd>A curve with a final segment back to its first point.</dd>
-              </div>
-              <div>
-                <dt>Two-dimensional exploration</dt>
-                <dd>
-                  Moving x and y independently without editing or following the
-                  curve.
-                </dd>
-              </div>
-            </dl>
+
+          <details className="workspace-disclosure" id="sound-controls">
+            <summary>Sound</summary>
+            <div className="disclosure-content">
+              <section
+                id="axis-mapping"
+                className="panel"
+                aria-labelledby="mapping-title"
+              >
+                <div className="panel-heading">
+                  <div>
+                    <h3 id="mapping-title">Choose how the curve sounds</h3>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      onClick={() => void previewAxis('both', 0.5)}
+                      disabled={!audioAvailable}
+                    >
+                      Test sound
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void soundExplorerPoint(displayedPoint, true)
+                      }
+                      disabled={!audioAvailable}
+                    >
+                      Hear current position
+                    </button>
+                  </div>
+                </div>
+                <fieldset className="sound-mode">
+                  <legend>Sonification mode</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="sonification-mode"
+                      value="spatial"
+                      checked={sonificationMode === 'spatial'}
+                      disabled={monoCompatible}
+                      onChange={() => changeSonificationMode('spatial')}
+                    />{' '}
+                    Spatial voice
+                  </label>
+                  <p className="fine-print">
+                    One sound: X sets its left-to-right position and Y sets
+                    pitch.
+                  </p>
+                  <label>
+                    <input
+                      type="radio"
+                      name="sonification-mode"
+                      value="axis-voices"
+                      checked={sonificationMode === 'axis-voices'}
+                      onChange={() => changeSonificationMode('axis-voices')}
+                    />{' '}
+                    Axis voices
+                  </label>
+                  <p className="fine-print">
+                    Separate X and Y sounds with independent instruments and
+                    pitch ranges.
+                  </p>
+                </fieldset>
+                <div className="global-audio-controls">
+                  <label htmlFor="master-volume">
+                    Master volume: {Math.round(masterVolume * 100)}%
+                  </label>
+                  <input
+                    id="master-volume"
+                    type="range"
+                    min="0"
+                    max="0.4"
+                    step="0.01"
+                    value={masterVolume}
+                    onChange={(event) =>
+                      setMasterVolume(event.currentTarget.valueAsNumber)
+                    }
+                  />
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={useSharedDomain}
+                      onChange={(event) =>
+                        setUseSharedDomain(event.currentTarget.checked)
+                      }
+                    />{' '}
+                    Use one shared numeric domain for X and Y
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={monoCompatible}
+                      onChange={(event) =>
+                        changeMonoCompatible(event.currentTarget.checked)
+                      }
+                    />{' '}
+                    Mono-compatible output
+                  </label>
+                  <p className="fine-print full-row">
+                    Mono-compatible output uses centred Axis voices so X cannot
+                    be lost when stereo channels are combined.
+                  </p>
+                  <label htmlFor="progress-cues">Progress tick</label>
+                  <select
+                    id="progress-cues"
+                    value={progressCueSetting}
+                    onChange={(event) =>
+                      setProgressCueSetting(
+                        event.currentTarget.value as ProgressCueInterval,
+                      )
+                    }
+                  >
+                    <option value="off">Off</option>
+                    <option value="25">Every 25%</option>
+                    <option value="12.5">Every 12.5%</option>
+                    <option value="10">Every 10%</option>
+                  </select>
+                  <label htmlFor="progress-cue-volume">
+                    Tick volume: {Math.round(progressCueVolume * 100)}%
+                  </label>
+                  <input
+                    id="progress-cue-volume"
+                    type="range"
+                    min="0"
+                    max="0.3"
+                    step="0.01"
+                    value={progressCueVolume}
+                    disabled={progressCueSetting === 'off'}
+                    onChange={(event) =>
+                      setProgressCueVolume(event.currentTarget.valueAsNumber)
+                    }
+                  />
+                </div>
+                {sonificationMode === 'spatial' ? (
+                  <div className="spatial-controls field-grid">
+                    <label htmlFor="spatial-timbre">Voice sound</label>
+                    <select
+                      id="spatial-timbre"
+                      value={spatialTimbre}
+                      onChange={(event) =>
+                        setSpatialTimbre(
+                          event.currentTarget.value as AxisConfig['timbre'],
+                        )
+                      }
+                      disabled={ySignCue}
+                    >
+                      {INSTRUMENT_OPTIONS.map((instrument) => (
+                        <option key={instrument.value} value={instrument.value}>
+                          {instrument.label}
+                        </option>
+                      ))}
+                    </select>
+                    <label htmlFor="stereo-width">
+                      Stereo width: {Math.round(stereoWidth * 100)}%
+                    </label>
+                    <input
+                      id="stereo-width"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={stereoWidth}
+                      onChange={(event) =>
+                        setStereoWidth(event.currentTarget.valueAsNumber)
+                      }
+                    />
+                    <label className="full-row">
+                      <input
+                        type="checkbox"
+                        checked={ySignCue}
+                        onChange={(event) =>
+                          setYSignCue(event.currentTarget.checked)
+                        }
+                      />{' '}
+                      Blend hollow and bright colour around Y zero
+                    </label>
+                    <p className="fine-print full-row">
+                      The blend changes smoothly and is optional; the numeric X
+                      and Y readout always carries the same information without
+                      sound.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {rangesOverlap && (
+                      <div className="warning range-warning" role="note">
+                        <p>
+                          The X and Y pitch ranges overlap, so the two voices
+                          may be harder to tell apart.
+                        </p>
+                        <button
+                          type="button"
+                          className="button-secondary"
+                          onClick={restoreSeparatedRanges}
+                        >
+                          Restore separated ranges
+                        </button>
+                      </div>
+                    )}
+                    <div className="axis-grid">
+                      {axes.map((axis) => (
+                        <AxisControls
+                          key={axis.key}
+                          config={axis}
+                          domain={activeDomains[axis.key]}
+                          midiError={midiErrors[axis.key]}
+                          onChange={(next) => updateAxis(axis.key, next)}
+                          onMidiFile={(file) =>
+                            importMidiForAxis(axis.key, file)
+                          }
+                          onMidiClear={() => clearMidiForAxis(axis.key)}
+                          onPreview={(position) =>
+                            void previewAxis(axis.key, position)
+                          }
+                          onTest={() => void previewAxis(axis.key, 0.5)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </section>
+            </div>
           </details>
-          <div className="accessibility-statement">
-            <h3>Accessibility review status</h3>
-            <p>
-              The latest code review is dated 23 July 2026. Automated tests run
-              in Chromium and include keyboard flows and representative axe
-              checks. No screen-reader, mobile-device or disabled-participant
-              test has been recorded yet. Those checks remain required.
-            </p>
-            <p>
-              TIMUDS targets applicable WCAG 2.2 Level A and AA criteria. This
-              is a design target, not a claim of conformance. TIMUDS is
-              exploratory research software and has not been validated as
-              assistive technology or scientific instrumentation.
-            </p>
-          </div>
-          <div className="limitation-note">
-            <h3>Known limitations</h3>
-            <p>
-              TIMUDS handles two dimensions and a basic CSV format. Its timbres
-              are synthetic. It has not undergone perceptual, clinical or
-              scientific validation. Automated checks do not establish WCAG
-              conformance.
-            </p>
-            <p>
-              Found an accessibility problem?{' '}
-              <a href={issueUrl()} target="_blank" rel="noreferrer">
-                Open an accessibility issue in the project repository
-              </a>
-              . On a local preview this link opens GitHub's general issues page.
-            </p>
-          </div>
+
+          <details className="workspace-disclosure" id="advanced-controls">
+            <summary>Advanced</summary>
+            <div className="disclosure-content">
+              <TwoDimensionalExplorer
+                active={explorerActive}
+                point={explorerPoint}
+                domains={explorerDomains}
+                steps={explorerStepOptions}
+                stepName={explorerStepName}
+                customStep={customExplorerStep}
+                wasdEnabled={wasdEnabled}
+                listeningMode={explorerListeningMode}
+                previewDuration={previewDuration}
+                audioAvailable={audioAvailable}
+                onEnter={enterExplorer}
+                onExit={exitExplorer}
+                onControllerKeyDown={explorerControllerKeyDown}
+                onControllerBlur={explorerControllerBlur}
+                onCoordinateChange={changeExplorerCoordinate}
+                onStepNameChange={setExplorerStepName}
+                onCustomStepChange={setCustomExplorerStep}
+                onWasdChange={setWasdEnabled}
+                onListeningModeChange={setExplorerListeningMode}
+                onPreviewDurationChange={setPreviewDuration}
+                onHear={() => void soundExplorerPoint(explorerPoint, true)}
+                onAddToCurve={addExplorerPointToCurve}
+                onMoveTraversalToNearest={moveTraversalToNearest}
+              />
+            </div>
+          </details>
         </section>
+
+        <details className="page-disclosure" id="accessibility-controls">
+          <summary>Accessibility</summary>
+          <div className="disclosure-content">
+            <section
+              id="accessibility"
+              className="access-section"
+              aria-labelledby="access-title"
+            >
+              <div>
+                <p className="eyebrow">Access</p>
+                <h2 id="access-title">Access notes</h2>
+              </div>
+              <fieldset className="shortcut-settings">
+                <legend>Page shortcuts</legend>
+                <div className="field-grid">
+                  <label htmlFor="shortcut-scope">Shortcut scope</label>
+                  <select
+                    id="shortcut-scope"
+                    value={shortcutScope}
+                    onChange={(event) =>
+                      setShortcutScope(
+                        event.currentTarget.value as ShortcutScope,
+                      )
+                    }
+                  >
+                    <option value="off">Off</option>
+                    <option value="workspace">Workspace only</option>
+                    <option value="site-wide">Whole page</option>
+                  </select>
+                  <label className="full-row">
+                    <input
+                      type="checkbox"
+                      checked={requireAltForLetters}
+                      onChange={(event) =>
+                        setRequireAltForLetters(event.currentTarget.checked)
+                      }
+                    />{' '}
+                    Require Alt with S, R and ? shortcuts
+                  </label>
+                </div>
+                <p className="fine-print">
+                  Shortcuts never take over typing, native form controls, open
+                  dialogs, browser or assistive-technology modifier commands.
+                </p>
+                <button
+                  type="button"
+                  className="button-secondary"
+                  onClick={(event) => openKeyboardHelp(event.currentTarget)}
+                  aria-haspopup="dialog"
+                >
+                  Open keyboard help
+                </button>
+              </fieldset>
+              <div className="access-grid">
+                <div>
+                  <h3>Audio control</h3>
+                  <p>
+                    Sound begins after Play, Hear current position or a
+                    calibration button is pressed. Stop all sound is always
+                    visible once audio has been enabled.
+                  </p>
+                </div>
+                <div>
+                  <h3>Keyboard and screen readers</h3>
+                  <p>
+                    The controls use standard HTML elements. Manual explorer
+                    announcements are coalesced. Timed coordinate announcements
+                    are off by default.
+                  </p>
+                </div>
+                <div>
+                  <h3>Text readout</h3>
+                  <p>
+                    The current-position section remains selectable without
+                    audio. It includes coordinates, notes, frequencies, domains,
+                    instruments, MIDI pitch sources, voice states and traversal
+                    state.
+                  </p>
+                </div>
+                <div>
+                  <h3>Mono output and motion</h3>
+                  <p>
+                    Mono-compatible output uses two centred axis voices so
+                    neither dimension depends on stereo. Reduced motion removes
+                    interface transitions.
+                  </p>
+                </div>
+              </div>
+              <details className="keyboard-reference">
+                <summary>Additional keyboard notes</summary>
+                <div className="details-content keyboard-help-grid">
+                  <section aria-labelledby="keyboard-general">
+                    <h3 id="keyboard-general">General page navigation</h3>
+                    <p>
+                      Use <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> to
+                      move between controls. Use <kbd>Enter</kbd> or{' '}
+                      <kbd>Space</kbd> on native buttons. The first Tab reveals
+                      skip links.
+                    </p>
+                  </section>
+                  <section aria-labelledby="keyboard-follow">
+                    <h3 id="keyboard-follow">Follow-curve navigation</h3>
+                    <p>
+                      On Position along curve, <kbd>Left</kbd> and{' '}
+                      <kbd>Right</kbd> change progress. <kbd>Home</kbd> selects
+                      the start and <kbd>End</kbd> selects the end or closing
+                      seam. Named buttons provide the same actions.
+                    </p>
+                  </section>
+                  <section aria-labelledby="keyboard-plane">
+                    <h3 id="keyboard-plane">
+                      Two-dimensional plane navigation
+                    </h3>
+                    <p>
+                      Enter the mode, then focus stays on the bounded
+                      controller.
+                      <kbd>Left</kbd>/<kbd>Right</kbd> change x and{' '}
+                      <kbd>Up</kbd>/<kbd>Down</kbd> change numeric y.{' '}
+                      <kbd>Shift</kbd> uses the coarse step. <kbd>Escape</kbd>{' '}
+                      returns to the curve. <kbd>Tab</kbd> leaves normally.
+                    </p>
+                  </section>
+                  <section aria-labelledby="keyboard-wasd">
+                    <h3 id="keyboard-wasd">Optional WASD controls</h3>
+                    <p>
+                      WASD starts off. When enabled, it works only on the
+                      focused plane controller: <kbd>W</kbd> increases y,{' '}
+                      <kbd>A</kbd> decreases x, <kbd>S</kbd> decreases y and{' '}
+                      <kbd>D</kbd> increases x.
+                    </p>
+                  </section>
+                  <section aria-labelledby="keyboard-safety">
+                    <h3 id="keyboard-safety">Audio-safety control</h3>
+                    <p>
+                      When audio is sounding, <kbd>Escape</kbd> fades it outside
+                      editable fields and dialogs. The visible Stop all sound
+                      button performs the same safety action.
+                    </p>
+                  </section>
+                  <section aria-labelledby="keyboard-screen-reader">
+                    <h3 id="keyboard-screen-reader">Screen-reader note</h3>
+                    <p>
+                      Browse and Quick Nav modes may retain arrow or character
+                      keys. The native position, x and y controls remain
+                      available. You do not need to turn off your screen reader.
+                    </p>
+                  </section>
+                </div>
+              </details>
+              <details className="definitions">
+                <summary>Terms used in TIMUDS</summary>
+                <dl className="term-list">
+                  <div>
+                    <dt>Sonification</dt>
+                    <dd>Using sound to present information from data.</dd>
+                  </div>
+                  <div>
+                    <dt>Axis domain</dt>
+                    <dd>
+                      The minimum and maximum numeric values for one axis.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Pitch mapping</dt>
+                    <dd>
+                      The rule that converts a coordinate into a frequency.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Arc-length traversal</dt>
+                    <dd>Movement at an even spatial speed along the curve.</dd>
+                  </div>
+                  <div>
+                    <dt>Open curve</dt>
+                    <dd>A curve that ends at its final supplied point.</dd>
+                  </div>
+                  <div>
+                    <dt>Closed curve</dt>
+                    <dd>
+                      A curve with a final segment back to its first point.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Two-dimensional exploration</dt>
+                    <dd>
+                      Moving x and y independently without editing or following
+                      the curve.
+                    </dd>
+                  </div>
+                </dl>
+              </details>
+              <div className="accessibility-statement">
+                <h3>Accessibility review status</h3>
+                <p>
+                  The latest code review is dated 23 July 2026. Automated tests
+                  run in Chromium and include keyboard flows and representative
+                  axe checks. No screen-reader, mobile-device or
+                  disabled-participant test has been recorded yet. Those checks
+                  remain required.
+                </p>
+                <p>
+                  TIMUDS targets applicable WCAG 2.2 Level A and AA criteria.
+                  This is a design target, not a claim of conformance. TIMUDS is
+                  exploratory research software and has not been validated as
+                  assistive technology or scientific instrumentation.
+                </p>
+              </div>
+              <div className="limitation-note">
+                <h3>Known limitations</h3>
+                <p>
+                  TIMUDS handles two dimensions and a basic CSV format. Its
+                  instruments are synthetic. MIDI import extracts a sorted note
+                  palette; it does not replay the file or reproduce its
+                  instruments and timing. TIMUDS has not undergone perceptual,
+                  clinical or scientific validation. Automated checks do not
+                  establish WCAG conformance.
+                </p>
+                <p>
+                  Found an accessibility problem?{' '}
+                  <a href={issueUrl()} target="_blank" rel="noreferrer">
+                    Open an accessibility issue in the project repository
+                  </a>
+                  . On a local preview this link opens GitHub's general issues
+                  page.
+                </p>
+              </div>
+            </section>
+          </div>
+        </details>
       </main>
+      <dialog
+        ref={helpDialogRef}
+        className="keyboard-dialog"
+        aria-labelledby="keyboard-dialog-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeKeyboardHelp();
+        }}
+        onClose={() => {
+          if (helpOpen) closeKeyboardHelp();
+        }}
+      >
+        <div className="dialog-heading">
+          <div>
+            <p className="eyebrow">Reference</p>
+            <h2 id="keyboard-dialog-title" tabIndex={-1}>
+              Keyboard help
+            </h2>
+          </div>
+          <button type="button" onClick={closeKeyboardHelp}>
+            Close
+          </button>
+        </div>
+        <p>
+          Current scope: <strong>{shortcutScope.replace('-', ' ')}</strong>.
+          These commands work away from form controls and editable text.
+        </p>
+        <div className="keyboard-table-wrap">
+          <table>
+            <caption>Workspace commands</caption>
+            <thead>
+              <tr>
+                <th scope="col">Key</th>
+                <th scope="col">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">
+                  <kbd>Space</kbd>
+                </th>
+                <td>Play or hold</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <kbd>S</kbd>
+                </th>
+                <td>Stop all sound</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <kbd>R</kbd>
+                </th>
+                <td>Return to the start</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <kbd>Left</kbd> / <kbd>Right</kbd>
+                </th>
+                <td>Move 1%; add Shift to move 10%</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <kbd>Home</kbd>
+                </th>
+                <td>Move to the start</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <kbd>End</kbd>
+                </th>
+                <td>Move to the end of an open curve</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <kbd>Escape</kbd>
+                </th>
+                <td>Emergency stop outside controls; close this dialog here</td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <kbd>?</kbd>
+                </th>
+                <td>Open this help</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="fine-print">
+          {requireAltForLetters
+            ? 'Alt is currently required with S, R and ?.'
+            : 'S, R and ? currently work without Alt.'}{' '}
+          Screen-reader browse modes may keep character and arrow keys; every
+          action also has a visible native control.
+        </p>
+        <div className="button-row">
+          <button
+            type="button"
+            className="stop-prominent"
+            onClick={() => stopAllSound('Sound stopped from keyboard help.')}
+            disabled={!audioEnabled}
+          >
+            Stop all sound
+          </button>
+          <button type="button" onClick={closeKeyboardHelp}>
+            Close keyboard help
+          </button>
+        </div>
+      </dialog>
       <footer>
         <p>TIMUDS / FIELD INSTRUMENT 01</p>
         <p>Runs in this browser. No data is sent.</p>
