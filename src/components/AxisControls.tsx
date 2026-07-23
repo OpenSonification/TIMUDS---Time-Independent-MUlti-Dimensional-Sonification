@@ -1,4 +1,5 @@
 import { INSTRUMENT_OPTIONS, INSTRUMENTS } from '../core/instruments';
+import { AUDIO_FILE_ACCEPT, MAX_AUDIO_FILE_BYTES } from '../core/audioFile';
 import { MAX_MIDI_FILE_BYTES } from '../core/midi';
 import { midiToNoteName } from '../core/pitch';
 import type {
@@ -13,9 +14,12 @@ interface AxisControlsProps {
   domain: NumericDomain;
   valueMapping: ValueMapping;
   midiError: string;
+  audioSampleError: string;
   onChange: (next: AxisConfig) => void;
   onMidiFile: (file: File) => Promise<void>;
   onMidiClear: () => void;
+  onAudioSampleFile: (file: File) => Promise<void>;
+  onAudioSampleClear: () => void;
   onPreview: (position: 0 | 0.5 | 1) => void;
   onTest: () => void;
 }
@@ -25,9 +29,12 @@ export function AxisControls({
   domain,
   valueMapping,
   midiError,
+  audioSampleError,
   onChange,
   onMidiFile,
   onMidiClear,
+  onAudioSampleFile,
+  onAudioSampleClear,
   onPreview,
   onTest,
 }: AxisControlsProps) {
@@ -35,7 +42,10 @@ export function AxisControls({
   const instrumentDescriptionId = `${id}-instrument-description`;
   const midiHelpId = `${id}-midi-help`;
   const midiErrorId = `${id}-midi-error`;
+  const audioSampleHelpId = `${id}-audio-sample-help`;
+  const audioSampleErrorId = `${id}-audio-sample-error`;
   const midiMap = config.midiNoteMap;
+  const audioSample = config.audioSample;
   const mappedProperty = {
     pitch: 'pitch',
     volume: 'volume',
@@ -60,6 +70,7 @@ export function AxisControls({
           id={`${id}-timbre`}
           value={config.timbre}
           aria-describedby={instrumentDescriptionId}
+          disabled={Boolean(audioSample)}
           onChange={(event) =>
             onChange({ ...config, timbre: event.target.value as TimbreName })
           }
@@ -71,8 +82,9 @@ export function AxisControls({
           ))}
         </select>
         <p id={instrumentDescriptionId} className="fine-print full-row">
-          {INSTRUMENTS[config.timbre].description} All choices are lightweight
-          local synthesis, not recordings of acoustic instruments.
+          {audioSample
+            ? `${audioSample.fileName} currently replaces this instrument. Remove the uploaded audio to use ${INSTRUMENTS[config.timbre].label} again.`
+            : `${INSTRUMENTS[config.timbre].description} All built-in choices use lightweight local synthesis.`}
         </p>
         <label htmlFor={`${id}-gain`}>
           {valueMapping === 'volume'
@@ -143,6 +155,92 @@ export function AxisControls({
           Test {config.key.toUpperCase()}
         </button>
       </div>
+      <section
+        className="audio-sample"
+        aria-labelledby={`${id}-audio-sample-title`}
+      >
+        <h4 id={`${id}-audio-sample-title`}>Optional uploaded sound</h4>
+        <p id={audioSampleHelpId} className="fine-print">
+          Choose a local MP3, WAV, OGG, M4A, AAC or WebM file up to{' '}
+          {MAX_AUDIO_FILE_BYTES / 1_000_000} MB. It replaces the built-in
+          instrument for this axis and loops while the curve sounds. Pitch
+          mapping transposes the sample and therefore changes its playback
+          speed. Decoding stays in this browser; nothing is uploaded.
+        </p>
+        <label htmlFor={`${id}-audio-sample`}>
+          Audio sample for {config.label.toLowerCase()}
+        </label>
+        <input
+          id={`${id}-audio-sample`}
+          type="file"
+          accept={AUDIO_FILE_ACCEPT}
+          aria-describedby={audioSampleHelpId}
+          aria-invalid={audioSampleError ? 'true' : undefined}
+          aria-errormessage={audioSampleError ? audioSampleErrorId : undefined}
+          onChange={(event) => {
+            const input = event.currentTarget;
+            const file = input.files?.[0];
+            if (!file) {
+              input.value = '';
+              return;
+            }
+            void onAudioSampleFile(file).finally(() => {
+              input.value = '';
+            });
+          }}
+        />
+        {audioSampleError && (
+          <p id={audioSampleErrorId} className="inline-error" role="alert">
+            {config.label} audio sample: {audioSampleError}
+          </p>
+        )}
+        {audioSample && (
+          <div className="audio-sample-summary">
+            <p>
+              <strong>{audioSample.fileName}</strong>: decoded locally,{' '}
+              {audioSample.durationSeconds.toFixed(2)} seconds.
+            </p>
+            <div className="field-grid">
+              <label htmlFor={`${id}-audio-sample-root`}>
+                Original sample note
+              </label>
+              <input
+                id={`${id}-audio-sample-root`}
+                type="number"
+                min="24"
+                max="96"
+                value={audioSample.rootMidi}
+                aria-describedby={`${id}-audio-sample-root-help`}
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (Number.isFinite(value)) {
+                    const rootMidi = Math.min(96, Math.max(24, value));
+                    onChange({
+                      ...config,
+                      audioSample: { ...audioSample, rootMidi },
+                    });
+                  }
+                }}
+              />
+              <p
+                id={`${id}-audio-sample-root-help`}
+                className="fine-print full-row"
+              >
+                MIDI {audioSample.rootMidi},{' '}
+                {midiToNoteName(audioSample.rootMidi)}. Set this to the note
+                heard in the original recording; use MIDI 60 (C4) when unknown.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={onAudioSampleClear}
+            >
+              Remove {config.key.toUpperCase()} uploaded sound
+            </button>
+          </div>
+        )}
+      </section>
       <section className="midi-map" aria-labelledby={`${id}-midi-title`}>
         <h4 id={`${id}-midi-title`}>Optional MIDI note map</h4>
         <p id={midiHelpId} className="fine-print">

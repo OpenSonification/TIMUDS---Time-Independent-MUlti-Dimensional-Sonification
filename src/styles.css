@@ -937,7 +937,8 @@ legend {
   margin-top: 1rem;
 }
 
-.midi-map {
+.midi-map,
+.audio-sample {
   margin-top: 1.2rem;
   border-top: 1px solid var(--rule);
   padding-top: 1rem;
@@ -945,19 +946,24 @@ legend {
 
 .midi-map h4,
 .midi-map label,
-.midi-map input[type='file'] {
+.midi-map input[type='file'],
+.audio-sample h4,
+.audio-sample label,
+.audio-sample input[type='file'] {
   display: block;
   margin-bottom: 0.55rem;
 }
 
-.midi-map-summary {
+.midi-map-summary,
+.audio-sample-summary {
   margin-top: 0.8rem;
   border-left: 5px solid var(--y);
   padding: 0.8rem 1rem;
   background: var(--paper-dim);
 }
 
-.midi-map-summary p {
+.midi-map-summary p,
+.audio-sample-summary p {
   margin-bottom: 0.55rem;
   overflow-wrap: anywhere;
 }
@@ -1653,7 +1659,8 @@ input[type='radio'] {
   footer,
   .workspace-grid,
   .curve-summary,
-  .midi-map-summary {
+  .midi-map-summary,
+  .audio-sample-summary {
     border-color: CanvasText;
     background: Canvas;
     color: CanvasText;

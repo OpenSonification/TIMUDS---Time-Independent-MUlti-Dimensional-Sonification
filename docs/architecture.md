@@ -8,6 +8,12 @@
 
 `src/core/midi.ts` reads Standard MIDI File bytes without Web MIDI or a runtime dependency. It validates `MThd`/`MTrk` structure, bounded variable-length values, track boundaries, running status and channel-event sizes. It accepts at most 2 MB, 64 tracks and 50,000 note-on events. The result contains only a sanitised filename and sorted unique note numbers; timing, velocity, programs, effects and the original bytes are discarded.
 
+`src/core/audioFile.ts` performs the presentation-independent extension, empty
+file and 10 MB checks for local audio clips. `AudioEngine` alone passes the
+bytes to `AudioContext.decodeAudioData`, rejects decoded durations outside
+0.05–30 seconds and owns the resulting in-memory buffers. React state retains
+only the filename, duration, reference MIDI note and an opaque buffer key.
+
 Preset functions are deterministic and omit a duplicated endpoint on closed curves. Closure is owned by geometry so the return segment appears exactly once.
 
 ## Geometry and interpolation
@@ -82,9 +88,11 @@ X modulation oscillator → modulation depth → X carrier detune
 X pulse oscillator → pulse depth → X voice gain
 X secondary oscillator → layer gain ┐
 X carrier oscillator → carrier gain ┴→ X filter ┐
+X uploaded sample → sample gain ─────────────────┤
 noise source → X texture filter → texture gain ┴→ X articulation → X gain → X panner ┐
                                                                                      ├→ master → compressor → destination
 noise source → Y texture filter → texture gain ┬→ Y articulation → Y gain → Y panner ┘
+Y uploaded sample → sample gain ─────────────────┤
 Y carrier oscillator → carrier gain ┬→ Y filter ┘
 Y secondary oscillator → layer gain ┘
 Y modulation oscillator → modulation depth → Y carrier detune
@@ -92,15 +100,18 @@ Y pulse oscillator → pulse depth → Y voice gain
 noise source → high-pass filter → cue gain ──────────────────────────────────────────┘
 ```
 
-The context and graph are created only from deliberate Play/calibration
-handlers. Sources then remain alive until teardown. In Axis mode the two paths
-are independent voices. In Spatial mode they share Y pitch and X pan and can
-crossfade hollow/bright sign timbres. `PeriodicWave` harmonics and filter
-tracking make the synthetic instrument families. Optional octave, detuned,
-inharmonic and filtered-noise layers provide larger categorical differences;
-attack, decay and vibrato separate behaviour over time. Pure tone uses sine.
-Frequency, filter, modulation, layer, texture, voice gain, panning and master
-gain use bounded smoothing. Brightness multiplies the instrument's calculated
+The context and graph are created only from deliberate audio handlers,
+including choosing a local sample for decoding. Sample selection remains
+silent. Oscillator and noise sources remain alive until teardown. Uploaded
+clips use replaceable looped buffer sources because Web Audio buffer sources
+cannot be restarted. In Axis mode the two paths are independent voices. In
+Spatial mode they share Y pitch and X pan and can crossfade hollow/bright sign
+timbres. `PeriodicWave` harmonics and filter tracking make the synthetic
+instrument families. Optional octave, detuned, inharmonic and filtered-noise
+layers provide larger categorical differences; attack, decay and vibrato
+separate behaviour over time. Pure tone uses sine. Frequency, sample playback
+rate, filter, modulation, layer, texture, voice gain, panning and master gain
+use bounded smoothing. Brightness multiplies the instrument's calculated
 filter frequency within 80–12,000 Hz. Pulse mapping modulates the voice gain
 from 20% to 100% of its selected level using a persistent audio-rate node, so
 its timing does not depend on React or animation frames.
@@ -136,13 +147,16 @@ same names and coordinates. Native elements supply range, number, selection,
 disclosure, file, table and button semantics.
 
 `preferences.ts` validates a versioned, bounded subset of sound and keyboard
-settings before reading or writing local storage. Playback, audio-enabled state,
-curve position and imported data are never persisted.
+settings before reading or writing local storage. Playback, audio-enabled
+state, curve position, MIDI maps and uploaded audio metadata or bytes are never
+persisted.
 
 ## Extension points
 
 - Add axis keys/configuration and generalise `Point` to a keyed coordinate record before adding more voices. Keep the current two-dimensional interface until an interaction model is validated.
 - Add alternative mapping functions behind a typed strategy without coupling them to `AudioEngine`.
 - Extend MIDI mapping only through pure, bounded strategies; do not turn file input into device access or retain source bytes.
+- Extend sample playback inside `AudioEngine`; keep decoded buffers out of
+  React and persistent storage.
 - Replace the geometry linear lookup with binary search if profiling demonstrates a need.
 - Add import for the exported schema only with version validation and safe merging.

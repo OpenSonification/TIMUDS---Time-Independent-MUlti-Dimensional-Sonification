@@ -35,6 +35,11 @@ import {
   type AuditionNote,
 } from './core/auditionPatterns';
 import {
+  readAudioSampleFile,
+  safeAudioFileName,
+  validateAudioSampleFile,
+} from './core/audioFile';
+import {
   crossedCurveBenchmarks,
   curveBenchmarks as findCurveBenchmarks,
   type CurveBenchmark,
@@ -65,7 +70,12 @@ import {
   readCoordinateFile,
   type CoordinateFormat,
 } from './core/parser';
-import { effectiveDomain, mapValueToPitch, sharedDomain } from './core/pitch';
+import {
+  effectiveDomain,
+  mapValueToPitch,
+  midiToNoteName,
+  sharedDomain,
+} from './core/pitch';
 import { generatePreset, PRESET_NAMES, type PresetName } from './core/presets';
 import { resolveShortcut } from './core/shortcuts';
 import {
@@ -105,6 +115,7 @@ const DEFAULT_AXES: AxisConfig[] = [
     lowMidi: 60,
     highMidi: 72,
     midiNoteMap: null,
+    audioSample: null,
     inverted: false,
     gain: 0.76,
     muted: false,
@@ -120,6 +131,7 @@ const DEFAULT_AXES: AxisConfig[] = [
     lowMidi: 60,
     highMidi: 72,
     midiNoteMap: null,
+    audioSample: null,
     inverted: false,
     gain: 0.76,
     muted: false,
@@ -365,6 +377,9 @@ export function App() {
     x: '',
     y: '',
   });
+  const [audioSampleErrors, setAudioSampleErrors] = useState<
+    Record<AxisKey, string>
+  >({ x: '', y: '' });
   const [useSharedDomain, setUseSharedDomain] = useState(false);
   const [sonificationMode, setSonificationModeState] =
     useState<SonificationMode>(
@@ -451,6 +466,10 @@ export function App() {
   const lastExplorerKeyTimeRef = useRef(0);
   const lastBoundaryRef = useRef<string | null>(null);
   const midiRequestRef = useRef<Record<AxisKey, number>>({ x: 0, y: 0 });
+  const audioSampleRequestRef = useRef<Record<AxisKey, number>>({
+    x: 0,
+    y: 0,
+  });
   const lastCueProgressRef = useRef(0);
   const lastAnimationTimeRef = useRef(0);
 
@@ -1458,6 +1477,79 @@ export function App() {
     );
   }
 
+  async function importAudioSampleForAxis(
+    key: AxisKey,
+    file: File,
+  ): Promise<void> {
+    const request = audioSampleRequestRef.current[key] + 1;
+    audioSampleRequestRef.current[key] = request;
+    const sampleId = `${key}-audio-${request.toString()}`;
+    setAudioSampleErrors((current) => ({ ...current, [key]: '' }));
+    if (audioSounding)
+      stopAllSound('Loading an audio sample stopped all sound.');
+
+    try {
+      validateAudioSampleFile(file);
+      await engine.enable();
+      setAudioEnabled(true);
+      const encodedAudio = await readAudioSampleFile(file);
+      if (audioSampleRequestRef.current[key] !== request) return;
+      const decoded = await engine.loadAudioSample(sampleId, encodedAudio);
+      if (audioSampleRequestRef.current[key] !== request) {
+        engine.removeAudioSample(sampleId);
+        return;
+      }
+
+      const fileName = safeAudioFileName(file.name);
+      const previousSampleId = axisConfigs[key].audioSample?.id;
+      setAxes((current) =>
+        current.map((axis) =>
+          axis.key === key
+            ? {
+                ...axis,
+                audioSample: {
+                  id: sampleId,
+                  fileName,
+                  durationSeconds: decoded.durationSeconds,
+                  rootMidi: 60,
+                },
+              }
+            : axis,
+        ),
+      );
+      if (previousSampleId) engine.removeAudioSample(previousSampleId);
+      setAnnouncement(
+        `${key.toUpperCase()} uploaded sound loaded from ${fileName}. ${decoded.durationSeconds.toFixed(2)} seconds, original note C4. Audio is enabled but silent.`,
+      );
+    } catch (error) {
+      if (audioSampleRequestRef.current[key] !== request) return;
+      engine.removeAudioSample(sampleId);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'The audio sample could not be loaded.';
+      setAudioSampleErrors((current) => ({ ...current, [key]: message }));
+      setAnnouncement(`${key.toUpperCase()} audio sample error: ${message}`);
+    }
+  }
+
+  function clearAudioSampleForAxis(key: AxisKey): void {
+    audioSampleRequestRef.current[key] += 1;
+    if (audioSounding)
+      stopAllSound('Removing an audio sample stopped all sound.');
+    const sampleId = axisConfigs[key].audioSample?.id;
+    if (sampleId) engine.removeAudioSample(sampleId);
+    setAudioSampleErrors((current) => ({ ...current, [key]: '' }));
+    setAxes((current) =>
+      current.map((axis) =>
+        axis.key === key ? { ...axis, audioSample: null } : axis,
+      ),
+    );
+    setAnnouncement(
+      `${key.toUpperCase()} uploaded sound removed. ${INSTRUMENTS[axisConfigs[key].timbre].label} is active again.`,
+    );
+  }
+
   async function previewAxis(
     key: AxisKey | 'both',
     position: 0 | 0.5 | 1,
@@ -1725,10 +1817,14 @@ export function App() {
     setParameterisation('arc-length');
     setDuration(20);
     setLoop(false);
+    engine.clearAudioSamples();
     setAxes(DEFAULT_AXES);
     midiRequestRef.current.x += 1;
     midiRequestRef.current.y += 1;
+    audioSampleRequestRef.current.x += 1;
+    audioSampleRequestRef.current.y += 1;
     setMidiErrors({ x: '', y: '' });
+    setAudioSampleErrors({ x: '', y: '' });
     setUseSharedDomain(false);
     setSonificationModeState(DEFAULT_PREFERENCES.sonificationMode);
     setValueMapping(DEFAULT_PREFERENCES.valueMapping);
@@ -2143,7 +2239,9 @@ export function App() {
                     <div key={`${axis.key}-voice-state`}>
                       <dt>{axis.key.toUpperCase()} voice</dt>
                       <dd>
-                        {INSTRUMENTS[axis.timbre].label}.{' '}
+                        {axis.audioSample
+                          ? `Uploaded sound ${axis.audioSample.fileName}, ${axis.audioSample.durationSeconds.toFixed(2)} seconds, original note ${midiToNoteName(axis.audioSample.rootMidi)}.`
+                          : `${INSTRUMENTS[axis.timbre].label}.`}{' '}
                         {axis.midiNoteMap
                           ? `${axis.midiNoteMap.fileName} MIDI map with ${axis.midiNoteMap.notes.length} ${axis.midiNoteMap.notes.length === 1 ? 'note' : 'notes'}.`
                           : `Continuous MIDI ${axis.lowMidi} to ${axis.highMidi}.`}{' '}
@@ -3033,6 +3131,8 @@ export function App() {
                     </p>
                     {valueMapping === 'pitch' &&
                       rangesOverlap &&
+                      !axisConfigs.x.audioSample &&
+                      !axisConfigs.y.audioSample &&
                       axisConfigs.x.timbre === axisConfigs.y.timbre && (
                         <div className="warning range-warning" role="note">
                           <p>
@@ -3056,11 +3156,18 @@ export function App() {
                           domain={activeDomains[axis.key]}
                           valueMapping={valueMapping}
                           midiError={midiErrors[axis.key]}
+                          audioSampleError={audioSampleErrors[axis.key]}
                           onChange={(next) => updateAxis(axis.key, next)}
                           onMidiFile={(file) =>
                             importMidiForAxis(axis.key, file)
                           }
                           onMidiClear={() => clearMidiForAxis(axis.key)}
+                          onAudioSampleFile={(file) =>
+                            importAudioSampleForAxis(axis.key, file)
+                          }
+                          onAudioSampleClear={() =>
+                            clearAudioSampleForAxis(axis.key)
+                          }
                           onPreview={(position) =>
                             void previewAxis(axis.key, position)
                           }

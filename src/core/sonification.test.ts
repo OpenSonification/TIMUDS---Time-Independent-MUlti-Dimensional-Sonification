@@ -24,6 +24,7 @@ const xAxis: AxisConfig = {
   lowMidi: 48,
   highMidi: 60,
   midiNoteMap: null,
+  audioSample: null,
   inverted: false,
   gain: 0.72,
   muted: false,

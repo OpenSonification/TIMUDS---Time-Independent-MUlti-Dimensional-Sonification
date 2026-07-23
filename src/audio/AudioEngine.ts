@@ -3,15 +3,23 @@ import {
   instrumentFilterFrequency,
   type InstrumentDefinition,
 } from '../core/instruments';
+import { midiToFrequency } from '../core/pitch';
 import type { SignBlend } from '../core/sonification';
-import type { AxisConfig, AxisKey, TimbreName } from '../core/types';
+import type {
+  AxisAudioSample,
+  AxisConfig,
+  AxisKey,
+  TimbreName,
+} from '../core/types';
 
 export const PITCH_SMOOTHING_SECONDS = 0.028;
 export const PAN_SMOOTHING_SECONDS = 0.045;
 export const TIMBRE_CROSSFADE_SECONDS = 0.075;
 export const STOP_FADE_SECONDS = 0.12;
 export const PROGRESS_TICK_SECONDS = 0.032;
+export const MAX_DECODED_AUDIO_SECONDS = 30;
 const STRUCK_PREVIEW_DECAY_DIVISOR = 2.6;
+const SAMPLE_GAIN_COMPENSATION = 0.75;
 
 interface Voice {
   oscillator: OscillatorNode;
@@ -28,6 +36,9 @@ interface Voice {
   articulation: GainNode;
   gain: GainNode;
   panner: StereoPannerNode;
+  sampleSource: AudioBufferSourceNode | null;
+  sampleGain: GainNode | null;
+  currentSampleId: string | null;
   currentTimbre: TimbreName | null;
   currentFrequency: number;
   lastArticulationTime: number;
@@ -66,6 +77,12 @@ export interface StartSoundOptions {
   struckPreviewDurationSeconds?: number;
 }
 
+export interface DecodedAudioSample {
+  durationSeconds: number;
+  numberOfChannels: number;
+  sampleRate: number;
+}
+
 const AXES: AxisKey[] = ['x', 'y'];
 
 function audioContextConstructor(): typeof AudioContext | undefined {
@@ -102,6 +119,7 @@ export class AudioEngine {
   private master: GainNode | null = null;
   private voices = new Map<AxisKey, Voice>();
   private waves = new Map<Exclude<TimbreName, 'pure'>, PeriodicWave>();
+  private audioSamples = new Map<string, AudioBuffer>();
   private textureSource: AudioBufferSourceNode | null = null;
   private progressSource: AudioBufferSourceNode | null = null;
   private progressGain: GainNode | null = null;
@@ -220,6 +238,9 @@ export class AudioEngine {
         articulation,
         gain,
         panner,
+        sampleSource: null,
+        sampleGain: null,
+        currentSampleId: null,
         currentTimbre: null,
         currentFrequency: 0,
         lastArticulationTime: Number.NEGATIVE_INFINITY,
@@ -247,6 +268,49 @@ export class AudioEngine {
     this.progressGain = progressGain;
   }
 
+  async loadAudioSample(
+    id: string,
+    encodedAudio: ArrayBuffer,
+  ): Promise<DecodedAudioSample> {
+    if (!this.context)
+      throw new Error('Enable audio before decoding an uploaded sound.');
+    let buffer: AudioBuffer;
+    try {
+      buffer = await this.context.decodeAudioData(encodedAudio.slice(0));
+    } catch {
+      throw new Error(
+        'The browser could not decode this audio file. Try a standard MP3 or WAV file.',
+      );
+    }
+    if (
+      !Number.isFinite(buffer.duration) ||
+      buffer.duration < 0.05 ||
+      buffer.duration > MAX_DECODED_AUDIO_SECONDS
+    ) {
+      throw new Error(
+        `Choose audio between 0.05 and ${MAX_DECODED_AUDIO_SECONDS} seconds long.`,
+      );
+    }
+    this.audioSamples.set(id, buffer);
+    return {
+      durationSeconds: buffer.duration,
+      numberOfChannels: buffer.numberOfChannels,
+      sampleRate: buffer.sampleRate,
+    };
+  }
+
+  removeAudioSample(id: string): void {
+    this.audioSamples.delete(id);
+    for (const voice of this.voices.values()) {
+      if (voice.currentSampleId === id) this.stopVoiceSample(voice);
+    }
+  }
+
+  clearAudioSamples(): void {
+    for (const voice of this.voices.values()) this.stopVoiceSample(voice);
+    this.audioSamples.clear();
+  }
+
   applyFrame(
     frame: AudioFrame,
     forceArticulation = false,
@@ -263,6 +327,7 @@ export class AudioEngine {
           config.key,
           frame.frequencies[config.key],
           config.timbre,
+          config.audioSample,
           audible ? config.gain * mappedLevel * 0.34 : 0,
           frame.monoCompatible ? 0 : config.pan,
           frame.brightness[config.key],
@@ -279,6 +344,7 @@ export class AudioEngine {
           'x',
           frame.frequency,
           'hollow',
+          null,
           frame.signBlend.negativeGain * mappedLevel * 0.31,
           pan,
           frame.brightness,
@@ -290,6 +356,7 @@ export class AudioEngine {
           'y',
           frame.frequency,
           'bright',
+          null,
           frame.signBlend.positiveGain * mappedLevel * 0.31,
           pan,
           frame.brightness,
@@ -302,6 +369,7 @@ export class AudioEngine {
           'x',
           frame.frequency,
           frame.timbre,
+          null,
           mappedLevel * 0.34,
           pan,
           frame.brightness,
@@ -313,6 +381,7 @@ export class AudioEngine {
           'y',
           frame.frequency,
           frame.timbre,
+          null,
           0,
           pan,
           frame.brightness,
@@ -336,6 +405,7 @@ export class AudioEngine {
     key: AxisKey,
     frequency: number,
     timbre: TimbreName,
+    audioSample: AxisAudioSample | null,
     gain: number,
     pan: number,
     brightness: number,
@@ -346,6 +416,30 @@ export class AudioEngine {
     if (!this.context) return;
     const voice = this.voices.get(key);
     if (!voice) return;
+    const sampleBuffer = audioSample
+      ? this.audioSamples.get(audioSample.id)
+      : undefined;
+    if (audioSample && sampleBuffer) {
+      this.applySampleVoice(
+        voice,
+        frequency,
+        audioSample,
+        gain,
+        pan,
+        brightness,
+        pulseRate,
+        forceArticulation,
+      );
+      return;
+    }
+    if (voice.sampleGain) {
+      voice.sampleGain.gain.setTargetAtTime(
+        0,
+        this.context.currentTime,
+        TIMBRE_CROSSFADE_SECONDS,
+      );
+    }
+    voice.currentSampleId = null;
     const definition = INSTRUMENTS[timbre];
     const timbreChanged = this.setTimbre(voice, timbre);
     const pitchChanged =
@@ -415,6 +509,103 @@ export class AudioEngine {
     );
     voice.currentFrequency = frequency;
     const compensatedGain = gain * definition.gainCompensation;
+    const boundedPulseRate = Math.min(8, Math.max(0, pulseRate));
+    const pulsing = boundedPulseRate > 0;
+    voice.gain.gain.setTargetAtTime(
+      compensatedGain * (pulsing ? 0.6 : 1),
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.pulseOscillator.frequency.setTargetAtTime(
+      pulsing ? Math.max(0.75, boundedPulseRate) : 0.75,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.pulseDepth.gain.setTargetAtTime(
+      pulsing ? compensatedGain * 0.4 : 0,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.panner.pan.setTargetAtTime(
+      Math.min(1, Math.max(-1, pan)),
+      this.context.currentTime,
+      PAN_SMOOTHING_SECONDS,
+    );
+  }
+
+  private applySampleVoice(
+    voice: Voice,
+    frequency: number,
+    sample: AxisAudioSample,
+    gain: number,
+    pan: number,
+    brightness: number,
+    pulseRate: number,
+    forceArticulation: boolean,
+  ): void {
+    if (!this.context) return;
+    const sampleChanged = voice.currentSampleId !== sample.id;
+    voice.currentSampleId = sample.id;
+    voice.currentTimbre = null;
+    this.applyArticulation(
+      voice,
+      INSTRUMENTS.pure,
+      forceArticulation || sampleChanged,
+      false,
+      frequency,
+    );
+
+    voice.carrierGain.gain.setTargetAtTime(
+      0,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.vibratoDepth.gain.setTargetAtTime(
+      0,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.secondaryGain.gain.setTargetAtTime(
+      0,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.textureGain.gain.setTargetAtTime(
+      0,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.sampleGain?.gain.setTargetAtTime(
+      1,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.filter.type = 'lowpass';
+    voice.filter.Q.setTargetAtTime(
+      0.35,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    const boundedBrightness = Math.min(2.5, Math.max(0.35, brightness));
+    voice.filter.frequency.setTargetAtTime(
+      Math.min(12_000, Math.max(80, 8_000 * boundedBrightness)),
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+
+    const rootFrequency = midiToFrequency(sample.rootMidi);
+    const playbackRate = Math.min(
+      8,
+      Math.max(0.125, frequency / rootFrequency),
+    );
+    voice.sampleSource?.playbackRate.setTargetAtTime(
+      playbackRate,
+      this.context.currentTime,
+      PITCH_SMOOTHING_SECONDS,
+    );
+    voice.currentFrequency = frequency;
+
+    const compensatedGain = gain * SAMPLE_GAIN_COMPENSATION;
     const boundedPulseRate = Math.min(8, Math.max(0, pulseRate));
     const pulsing = boundedPulseRate > 0;
     voice.gain.gain.setTargetAtTime(
@@ -552,7 +743,62 @@ export class AudioEngine {
     voice.pitchEnvelopeUntil = now + definition.pitchDropSeconds;
   }
 
+  private stopVoiceSample(
+    voice: Voice,
+    stopAt = this.context?.currentTime ?? 0,
+    disconnect = true,
+  ): void {
+    const source = voice.sampleSource;
+    const gain = voice.sampleGain;
+    if (source) {
+      try {
+        source.stop(stopAt);
+        if (disconnect) {
+          source.disconnect();
+        } else {
+          source.onended = () => {
+            source.disconnect();
+            gain?.disconnect();
+          };
+        }
+      } catch {
+        // Replacing an already-stopped sample requires no further cleanup.
+      }
+    }
+    if (disconnect) gain?.disconnect();
+    voice.sampleSource = null;
+    voice.sampleGain = null;
+    voice.currentSampleId = null;
+  }
+
+  private restartAxisSamples(frame: AudioFrame): void {
+    if (!this.context) return;
+    const configs =
+      frame.mode === 'axis-voices'
+        ? new Map(frame.axes.map((axis) => [axis.key, axis]))
+        : new Map<AxisKey, AxisConfig>();
+    for (const key of AXES) {
+      const voice = this.voices.get(key);
+      if (!voice) continue;
+      this.stopVoiceSample(voice);
+      const sample = configs.get(key)?.audioSample;
+      const buffer = sample ? this.audioSamples.get(sample.id) : undefined;
+      if (!sample || !buffer) continue;
+
+      const source = this.context.createBufferSource();
+      const gain = this.context.createGain();
+      source.buffer = buffer;
+      source.loop = true;
+      gain.gain.value = 0;
+      source.connect(gain).connect(voice.filter);
+      source.start();
+      voice.sampleSource = source;
+      voice.sampleGain = gain;
+    }
+  }
+
   startSound(frame: AudioFrame, options: StartSoundOptions = {}): void {
+    this.restartAxisSamples(frame);
     this.sounding = true;
     this.applyFrame(frame, true, options.struckPreviewDurationSeconds);
   }
@@ -586,6 +832,7 @@ export class AudioEngine {
     this.sounding = false;
     if (!this.context || !this.master) return;
     const now = this.context.currentTime;
+    const fade = Math.min(1, Math.max(0.02, fadeSeconds));
     for (const voice of this.voices.values()) {
       voice.oscillator.frequency.cancelScheduledValues(now);
       voice.carrierGain.gain.cancelScheduledValues(now);
@@ -606,12 +853,12 @@ export class AudioEngine {
       voice.panner.pan.cancelScheduledValues(now);
       voice.lastArticulationTime = Number.NEGATIVE_INFINITY;
       voice.pitchEnvelopeUntil = Number.NEGATIVE_INFINITY;
+      this.stopVoiceSample(voice, now + fade, false);
     }
     if (this.progressGain) {
       this.progressGain.gain.cancelScheduledValues(now);
       this.progressGain.gain.setTargetAtTime(0, now, 0.008);
     }
-    const fade = Math.min(1, Math.max(0.02, fadeSeconds));
     const parameter = this.master.gain;
     if (typeof parameter.cancelAndHoldAtTime === 'function') {
       parameter.cancelAndHoldAtTime(now);
@@ -661,6 +908,7 @@ export class AudioEngine {
     }
     this.voices.clear();
     this.waves.clear();
+    this.audioSamples.clear();
     if (this.context && this.context.state !== 'closed')
       await this.context.close();
     this.context = null;

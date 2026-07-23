@@ -61,6 +61,7 @@ async function mockAudioContext(page: Page): Promise<void> {
     class BufferSource extends Node {
       buffer: object | null = null;
       loop = false;
+      playbackRate = new Parameter();
       start(): void {}
       stop(): void {}
     }
@@ -100,6 +101,13 @@ async function mockAudioContext(page: Page): Promise<void> {
       }
       createBufferSource(): BufferSource {
         return new BufferSource();
+      }
+      decodeAudioData(): Promise<object> {
+        return Promise.resolve({
+          duration: 1.25,
+          numberOfChannels: 2,
+          sampleRate: 48_000,
+        });
       }
       resume(): Promise<void> {
         return Promise.resolve();
@@ -202,6 +210,14 @@ function midiUpload(name = 'major-triad.mid') {
       track.length,
       ...track,
     ]),
+  };
+}
+
+function audioSampleUpload(name = 'piano.mp3') {
+  return {
+    name,
+    mimeType: 'audio/mpeg',
+    buffer: Buffer.from([1, 2, 3, 4]),
   };
 }
 
@@ -526,6 +542,25 @@ test('selects independent instruments and imports a local MIDI note map', async 
     'No',
   );
   await expect(page.getByLabel(/Test sound length/)).toHaveValue('2');
+  await xVoice
+    .getByLabel('Audio sample for x-axis')
+    .setInputFiles(audioSampleUpload());
+  await expect(xVoice.locator('.audio-sample-summary')).toContainText(
+    'piano.mp3: decoded locally, 1.25 seconds',
+  );
+  await expect(xVoice.getByLabel('Instrument sound')).toBeDisabled();
+  await xVoice.getByLabel('Original sample note').fill('64');
+  await expect(xVoice.locator('.audio-sample-summary')).toContainText(
+    'MIDI 64, E4',
+  );
+  await xVoice.getByRole('button', { name: 'Test X' }).click();
+  await expect(
+    page.getByText(/X voice playing Held note for 2\.0 seconds/),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Stop all sound' }).first().click();
+  await xVoice.getByRole('button', { name: 'Remove X uploaded sound' }).click();
+  await expect(xVoice.getByLabel('Instrument sound')).toBeEnabled();
+
   await page.getByLabel('Test pattern').selectOption('clave');
   await yVoice.getByRole('button', { name: 'Test Y' }).click();
   await expect(

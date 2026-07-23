@@ -69,7 +69,10 @@ modulation.
 
 Full SoundFont support would add a large parsing, sampling and licensing
 surface, so it remains out of scope. Local MIDI files supply optional pitch
-palettes, not samples, timing or instruments. The built-in audition phrases are
-small original note-event fixtures. This avoids bundling third-party MIDI files
-whose reuse could require attribution and ShareAlike terms in a repository that
-does not yet have an owner-selected licence.
+palettes, not timing or instruments. A user may instead provide one bounded
+local audio clip per axis. The browser decodes that clip in memory and the
+engine loops and transposes it; TIMUDS does not parse SoundFonts, retain the
+bytes or ship sample content. The built-in audition phrases are small original
+note-event fixtures. This avoids bundling third-party MIDI or audio files whose
+reuse could require attribution and ShareAlike terms in a repository that does
+not yet have an owner-selected licence.

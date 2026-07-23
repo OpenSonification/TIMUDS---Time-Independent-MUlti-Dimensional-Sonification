@@ -4,6 +4,8 @@ import { DEFAULT_PREFERENCES } from '../core/preferences';
 import type { AxisConfig } from '../core/types';
 import {
   AudioEngine,
+  MAX_DECODED_AUDIO_SECONDS,
+  PITCH_SMOOTHING_SECONDS,
   PROGRESS_TICK_SECONDS,
   STOP_FADE_SECONDS,
 } from './AudioEngine';
@@ -58,6 +60,7 @@ class Compressor extends Node {
 class BufferSource extends Node {
   buffer: AudioBuffer | null = null;
   loop = false;
+  playbackRate = new Parameter();
   start = vi.fn();
   stop = vi.fn();
 }
@@ -75,6 +78,13 @@ class Context {
   bufferSources: BufferSource[] = [];
   resume = vi.fn(() => Promise.resolve());
   close = vi.fn(() => Promise.resolve());
+  decodeAudioData = vi.fn(() =>
+    Promise.resolve({
+      duration: 1.25,
+      numberOfChannels: 2,
+      sampleRate: 48_000,
+    } as AudioBuffer),
+  );
 
   constructor() {
     Context.latest = this;
@@ -123,6 +133,7 @@ const axes: AxisConfig[] = [
     lowMidi: 48,
     highMidi: 60,
     midiNoteMap: null,
+    audioSample: null,
     inverted: false,
     gain: 0.7,
     muted: false,
@@ -138,6 +149,7 @@ const axes: AxisConfig[] = [
     lowMidi: 67,
     highMidi: 79,
     midiNoteMap: null,
+    audioSample: null,
     inverted: false,
     gain: 0.7,
     muted: false,
@@ -292,6 +304,80 @@ describe('persistent audio engine', () => {
       4,
       expect.any(Number),
     );
+  });
+
+  it('decodes, transposes and stops a local axis audio sample', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+    const decoded = await engine.loadAudioSample(
+      'x-sample',
+      new Uint8Array([1, 2, 3]).buffer,
+    );
+    expect(decoded).toEqual({
+      durationSeconds: 1.25,
+      numberOfChannels: 2,
+      sampleRate: 48_000,
+    });
+
+    engine.startSound({
+      mode: 'axis-voices',
+      axes: axes.map((axis) =>
+        axis.key === 'x'
+          ? {
+              ...axis,
+              audioSample: {
+                id: 'x-sample',
+                fileName: 'piano.mp3',
+                durationSeconds: 1.25,
+                rootMidi: 60,
+              },
+            }
+          : axis,
+      ),
+      frequencies: { x: 523.2511306, y: 660 },
+      levels: { x: 1, y: 1 },
+      brightness: { x: 1, y: 1 },
+      pulseRates: { x: 0, y: 0 },
+      masterVolume: 0.18,
+      monoCompatible: false,
+    });
+
+    const sampleSource = context.bufferSources[2]!;
+    expect(sampleSource.loop).toBe(true);
+    expect(sampleSource.start).toHaveBeenCalledOnce();
+    const playbackRateCall =
+      sampleSource.playbackRate.setTargetAtTime.mock.calls.at(-1);
+    expect(playbackRateCall?.[0]).toBeCloseTo(2);
+    expect(playbackRateCall?.[1]).toBe(4);
+    expect(playbackRateCall?.[2]).toBe(PITCH_SMOOTHING_SECONDS);
+    expect(context.gains.at(-1)!.gain.setTargetAtTime).toHaveBeenCalledWith(
+      1,
+      4,
+      expect.any(Number),
+    );
+
+    engine.stopAllSound();
+    expect(sampleSource.stop).toHaveBeenCalledWith(4 + STOP_FADE_SECONDS);
+  });
+
+  it('rejects undecodable and overlong audio samples', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+    context.decodeAudioData.mockRejectedValueOnce(new Error('bad codec'));
+    await expect(
+      engine.loadAudioSample('broken', new Uint8Array([1]).buffer),
+    ).rejects.toThrow(/could not decode/i);
+
+    context.decodeAudioData.mockResolvedValueOnce({
+      duration: MAX_DECODED_AUDIO_SECONDS + 0.01,
+      numberOfChannels: 2,
+      sampleRate: 48_000,
+    } as AudioBuffer);
+    await expect(
+      engine.loadAudioSample('overlong', new Uint8Array([2]).buffer),
+    ).rejects.toThrow(/between 0\.05 and 30 seconds/i);
   });
 
   it('applies clearly different filter, vibrato and envelope profiles', async () => {

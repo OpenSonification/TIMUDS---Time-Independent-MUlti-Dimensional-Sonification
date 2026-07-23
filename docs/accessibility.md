@@ -34,6 +34,10 @@ Detailed evidence:
 - Five original, locally generated test patterns with a visible selector and
   descriptions. Changing the pattern or instrument remains silent.
 - Separate native MIDI file inputs for X and Y, bounded local parsing, associated inline errors, a readable note-palette summary and a remove action.
+- Separate native audio-file inputs for X and Y, a 10 MB encoded-file bound,
+  a 0.05–30 second decoded-duration bound, associated inline errors, visible
+  filename/duration/reference-note output and a remove action. Choosing a valid
+  sample may enable the audio graph for decoding but does not play sound.
 - A concise visible coordinate/progress/state readout available without audio or the SVG, with notes, frequencies and engine state in Technical details.
 - Configurable progress ticks with the native slider and percentage as non-audio equivalents. Ticks are never live-announced.
 - A central, disableable keyboard shortcut resolver with workspace and deliberately selected site-wide scopes.
@@ -169,7 +173,8 @@ sound state. Its Technical details and the Curve summary additionally expose:
 - direction and closure;
 - whether audio is enabled and sounding;
 - mute and solo state for each voice;
-- selected instrument and continuous or imported MIDI pitch source for each voice;
+- selected instrument or uploaded sample, including its duration and reference
+  note, and the continuous or imported MIDI pitch source for each voice;
 - point count, coordinate ranges and curve length.
 - current curve-benchmark names and coordinates.
 
@@ -242,7 +247,11 @@ The tested browser engine is Chromium supplied by Playwright. No real screen-rea
 - Very large point tables are paginated but still require sequential review.
 - Screen-reader support for SVG descriptions, native ranges and disclosures varies.
 - Synthetic audio differs across browsers, operating systems and output devices.
-- MIDI import uses note-on pitches as a sorted palette. It does not replay timing, velocity, channels, programs or effects and cannot import recorded audio.
+- MIDI import uses note-on pitches as a sorted palette. It does not replay
+  timing, velocity, channels, programs or effects.
+- Uploaded sound decoding depends on browser codecs. Samples loop in full;
+  there is no trimming or loop-point editor, and pitch changes also change
+  playback speed.
 - The site has not received a formal external accessibility audit.
 
 ## Report a problem

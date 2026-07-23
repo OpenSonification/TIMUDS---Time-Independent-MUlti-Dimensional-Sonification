@@ -43,6 +43,13 @@ export interface MidiNoteMap {
   trackCount: number;
 }
 
+export interface AxisAudioSample {
+  id: string;
+  fileName: string;
+  durationSeconds: number;
+  rootMidi: number;
+}
+
 export interface NumericDomain {
   minimum: number;
   maximum: number;
@@ -57,6 +64,7 @@ export interface AxisConfig {
   lowMidi: number;
   highMidi: number;
   midiNoteMap: MidiNoteMap | null;
+  audioSample: AxisAudioSample | null;
   inverted: boolean;
   gain: number;
   muted: boolean;

@@ -30,13 +30,16 @@ The default circle demonstrates why this matters. Its x coordinate repeatedly ri
 - Five original local test patterns: held note, bebop-style run, boogie bass,
   son-clave pulse and 3:2 hemiola.
 - Independent local Standard MIDI File note-map import for X and Y.
+- Independent local MP3, WAV, OGG, M4A, AAC or WebM sound import for X and Y,
+  with a configurable original note.
 - Matched, centred Axis registers with contrasting default instruments,
   per-axis calibration and explicit mono-compatible controls.
 - Configurable progress ticks and guarded workspace or site-wide keyboard
   commands.
 - Responsive SVG, concise numeric/state readout, collapsed technical details
   and independent two-dimensional keyboard exploration.
-- No backend, tracking, cookies, accounts, external fonts, samples or runtime service.
+- No backend, tracking, cookies, accounts, external fonts, bundled samples or
+  runtime service.
 
 ## Run locally
 
@@ -131,6 +134,16 @@ a non-pitch mapping uses its middle note as the stable pitch. Timing, velocity,
 channel, program-change and effect instructions are not replayed. The
 instrument selector determines the generated sound.
 
+Each axis can also use a local audio file as its sound. MP3, WAV, OGG, M4A, AAC
+and WebM files up to 10 MB are accepted when the browser can decode them; the
+decoded clip must be between 0.05 and 30 seconds. It loops while that axis
+sounds. **Original sample note** tells TIMUDS which pitch was recorded, using
+MIDI 60 (C4) when unknown. Pitch mapping transposes the clip by changing
+playback speed, while the other mappings keep the midpoint pitch. Remove the
+sample to return to the selected built-in instrument. The recording and
+decoded buffer remain in memory for this tab only and are not saved in
+preferences.
+
 ## Traversal
 
 Progress is normalised from 0 to 1 and never requires monotonic x.
@@ -189,18 +202,21 @@ optional, off by default and active only on the focused controller.
 
 ## Audio design and safety
 
-The graph is created only after Play, Hear current position or a calibration
-action. Each long-lived voice has carrier, secondary and modulation
-oscillators plus a gain-modulation oscillator for Pulse rate. A shared noise
-source supplies separately filtered instrument texture and progress cues.
-Filters, gains and panners feed one conservative master and compressor. The
-same graph serves both sound modes. Pitch, volume, pan, brightness and pulse
-changes use short smoothing constants.
+The graph is created only after Play, Hear current position, a calibration
+action or choosing an audio sample. Choosing a sample may enable the graph so
+the browser can decode it, but remains silent. Each long-lived voice has
+carrier, secondary and modulation oscillators plus a gain-modulation
+oscillator for Pulse rate. A shared noise source supplies separately filtered
+instrument texture and progress cues. Local sample buffers enter the same
+filter, gain, pan, master and compressor path. The same graph serves both sound
+modes. Pitch, volume, pan, brightness and pulse changes use short smoothing
+constants.
 
 The test controls can play one held note or an original MIDI-style phrase.
 Phrase note events alter pitch and rhythm while the selected synthetic
-instrument remains in charge of timbre. They are generated from source data in
-the application; no recordings or third-party MIDI files are loaded at runtime.
+instrument or uploaded sound remains in charge of timbre. The built-in phrases
+are generated from source data in the application; no recordings or
+third-party MIDI files are fetched at runtime.
 
 All exits share one Stop method: visible Stop controls, S, Escape, Reset, curve
 or mode changes, page hiding, previews and explorer exits cancel future
@@ -226,7 +242,12 @@ device results remain unrecorded.
 
 ## Privacy and browser requirements
 
-All coordinate and MIDI parsing, drawing, synthesis and export happen locally. Imported data never leaves the browser. MIDI upload does not request access to a connected MIDI device. The production application makes no requests after its static assets load and contains no analytics, telemetry, cookies, accounts, remote media or third-party runtime code.
+All coordinate, MIDI and audio-file processing, drawing, synthesis and export
+happen locally. Imported data never leaves the browser. MIDI upload does not
+request access to a connected MIDI device. Audio clips are decoded into memory
+and are not persisted. The production application makes no requests after its
+static assets load and contains no analytics, telemetry, cookies, accounts,
+remote media or third-party runtime code.
 
 A current desktop or mobile browser with SVG and ES2022 support is required. Sonification additionally needs the Web Audio API and an output route. Browsers may impose their own audio permission and background-suspension rules.
 
@@ -277,9 +298,11 @@ Pushes to `main` then run validation and deployment. The workflow can also be st
 
 ## Known limitations and future directions
 
-- Two dimensions only; arbitrary SoundFonts, uploaded audio samples,
-  head-tracking and custom key remapping remain out of scope.
+- Two dimensions only; arbitrary SoundFonts, sample trimming, loop-point
+  editing, head-tracking and custom key remapping remain out of scope.
 - MIDI import creates a sorted pitch palette; it is not a MIDI sequencer, sampler or sound-font player and does not reproduce the file’s timing or instrument commands.
+- Audio-file support depends on the browser's codecs. A clip loops in full,
+  and pitch transposition changes its speed and duration.
 - Basic comma-separated numeric data is supported, not quoted fields, locale decimal commas or arbitrary CSV dialects.
 - Freehand input uses deterministic distance filtering and arc-length resampling; it is an authoring convenience, not a digitisation measurement.
 - The app does not import its exported full configuration yet; coordinate arrays can be re-imported separately.

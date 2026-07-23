@@ -39,22 +39,28 @@ Use the production build. Start with a fresh page and system output at a low lev
 12. Select different X and Y instruments and each Test pattern. Confirm the current-position definition list identifies both instruments and that changing a selection does not start audio.
 13. Load a valid MIDI file into X. Confirm the status identifies the filename, distinct-note count, note-on event count, track count and pitch range. Review the palette, confirm the low/high range is disabled with an explanation, then remove the map.
 14. Load a malformed `.mid` file into Y. Confirm its inline alert is associated with the Y file input, the existing X configuration is unaffected and no sound starts.
-15. Activate Enable audio. Expected meaning: “Audio enabled. No sound is playing.”
-16. Review the curve-landmark list and confirm Voice over is checked beside Play. Activate Play. Confirm the initial and subsequently crossed extrema are spoken in English and match the listed coordinates. Check for duplicate browser and screen-reader speech. Untick Voice over if necessary. Use Hold, Stop all sound and Reset traversal; confirm queued browser speech stops and each state remains available as static text.
-17. Operate Position along curve with native range commands. Expected meaning at one quarter: “Position along curve, slider, 25 percent”, allowing product-specific phrasing.
-18. Use Step backwards and Step forwards. Confirm the announcement follows the selected detail level and does not move focus.
-19. Enter two-dimensional exploration. Expected meaning: “Keyboard exploration started. Arrow keys change x and y. The curve will not change. Press Escape to return.”
-20. Use Left, Right, Up and Down on the controller. Confirm Up increases numeric y, including when the Y sound-mapping direction is inverted. Confirm Shift uses the coarse step.
-21. Leave the controller with Tab and Shift+Tab. Confirm focus is not trapped, directional commands stop immediately and sustained preview sound fades.
-22. Use the native x/y ranges and number inputs. Confirm they are a reliable fallback when browse or Quick Nav intercepts directional commands. Do not instruct the tester to turn off the screen reader.
-23. Verify WASD is inert at first. Enable it, return focus to the controller and test W/A/S/D. Move to coordinate text and confirm characters type normally.
-24. Review Current position. Confirm mode, transport, progress, time, coordinates, notes, frequencies, mapped sound values, domains, direction, closure, sounding state, instruments, pitch sources and voice states are readable as a definition list.
-25. Open Inspect and edit source points. Navigate table caption, headers and rows. Move to a point, edit x/y, add, reorder and delete. Confirm deletion restores focus to Point number.
-26. Activate Add this coordinate to the curve. Confirm the change is explicit and announced.
-27. Download the configuration. Confirm the browser reports a JSON download.
-28. Test with Web Audio unavailable where the browser or harness permits it. Confirm authoring and all text/graphic inspection remain available.
-29. Use the complete keyboard reference and terms disclosure. Confirm instructions are available before memorisation is required.
-30. Explicitly exit the explorer by button and by Escape in separate runs. Confirm the saved traversal coordinate returns and focus is understandable.
+15. Load a short MP3 into X. Confirm the file input has instructions and the
+    visible summary reports its filename, duration and original note. Confirm
+    the instrument selector becomes unavailable with an explanation, audio is
+    enabled but silent, and removing the sample restores that selector. Load an
+    unsupported file into Y and confirm its inline alert is associated with the
+    Y audio input.
+16. Activate Enable audio if the sample test did not already enable it. Expected meaning: “Audio enabled. No sound is playing.”
+17. Review the curve-landmark list and confirm Voice over is checked beside Play. Activate Play. Confirm the initial and subsequently crossed extrema are spoken in English and match the listed coordinates. Check for duplicate browser and screen-reader speech. Untick Voice over if necessary. Use Hold, Stop all sound and Reset traversal; confirm queued browser speech stops and each state remains available as static text.
+18. Operate Position along curve with native range commands. Expected meaning at one quarter: “Position along curve, slider, 25 percent”, allowing product-specific phrasing.
+19. Use Step backwards and Step forwards. Confirm the announcement follows the selected detail level and does not move focus.
+20. Enter two-dimensional exploration. Expected meaning: “Keyboard exploration started. Arrow keys change x and y. The curve will not change. Press Escape to return.”
+21. Use Left, Right, Up and Down on the controller. Confirm Up increases numeric y, including when the Y sound-mapping direction is inverted. Confirm Shift uses the coarse step.
+22. Leave the controller with Tab and Shift+Tab. Confirm focus is not trapped, directional commands stop immediately and sustained preview sound fades.
+23. Use the native x/y ranges and number inputs. Confirm they are a reliable fallback when browse or Quick Nav intercepts directional commands. Do not instruct the tester to turn off the screen reader.
+24. Verify WASD is inert at first. Enable it, return focus to the controller and test W/A/S/D. Move to coordinate text and confirm characters type normally.
+25. Review Current position. Confirm mode, transport, progress, time, coordinates, notes, frequencies, mapped sound values, domains, direction, closure, sounding state, instruments or uploaded samples, pitch sources and voice states are readable as a definition list.
+26. Open Inspect and edit source points. Navigate table caption, headers and rows. Move to a point, edit x/y, add, reorder and delete. Confirm deletion restores focus to Point number.
+27. Activate Add this coordinate to the curve. Confirm the change is explicit and announced.
+28. Download the configuration. Confirm the browser reports a JSON download.
+29. Test with Web Audio unavailable where the browser or harness permits it. Confirm authoring and all text/graphic inspection remain available.
+30. Use the complete keyboard reference and terms disclosure. Confirm instructions are available before memorisation is required.
+31. Explicitly exit the explorer by button and by Escape in separate runs. Confirm the saved traversal coordinate returns and focus is understandable.
 
 ## Expected spoken semantics
 
@@ -74,6 +80,8 @@ Exact punctuation, ordering and voice-engine phrasing may differ. Meaning must r
 - “Line 3, x must be a finite number”
 - “MIDI file for x-axis, file upload”
 - “3 distinct notes from 3 note-on events in 1 track”
+- “Audio sample for x-axis, file upload”
+- “piano.mp3: decoded locally, 1.25 seconds”
 
 ## Announcement and repetition checks
 

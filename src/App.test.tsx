@@ -61,6 +61,7 @@ class MockCompressor extends MockNode {
 class MockBufferSource extends MockNode {
   buffer: AudioBuffer | null = null;
   loop = false;
+  playbackRate = new MockAudioParam();
   start = vi.fn();
   stop = vi.fn();
 }
@@ -85,6 +86,13 @@ class MockAudioContext {
       getChannelData: () => new Float32Array(length),
     }) as unknown as AudioBuffer;
   createBufferSource = () => new MockBufferSource();
+  decodeAudioData = vi.fn(() =>
+    Promise.resolve({
+      duration: 1.25,
+      numberOfChannels: 2,
+      sampleRate: 48_000,
+    } as AudioBuffer),
+  );
   resume = vi.fn(() => Promise.resolve());
   close = vi.fn(() => Promise.resolve());
 }
@@ -165,6 +173,12 @@ function midiFile(name = 'major-triad.mid'): File {
     name,
     { type: 'audio/midi' },
   );
+}
+
+function audioSampleFile(name = 'piano.mp3'): File {
+  return new File([new Uint8Array([1, 2, 3, 4])], name, {
+    type: 'audio/mpeg',
+  });
 }
 
 beforeEach(() => {
@@ -681,6 +695,58 @@ describe('TIMUDS workspace', () => {
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(input).toHaveAttribute('aria-errormessage', alert.id);
     expect(MockAudioContext.constructions).toBe(0);
+  });
+
+  it('loads, describes, tests and removes a local axis audio sample', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByLabelText('Axis voices'));
+    const xVoice = screen.getByRole('group', { name: 'X-axis voice' });
+    const fileInput = within(xVoice).getByLabelText('Audio sample for x-axis');
+
+    await user.upload(fileInput, audioSampleFile());
+    expect(
+      (await within(xVoice).findByText('piano.mp3')).closest('p'),
+    ).toHaveTextContent(/piano\.mp3: decoded locally, 1\.25 seconds/i);
+    expect(within(xVoice).getByLabelText('Instrument sound')).toBeDisabled();
+    expect(MockAudioContext.constructions).toBe(1);
+    expect(
+      screen.getByText('Audio enabled').nextElementSibling,
+    ).toHaveTextContent('Yes');
+
+    fireEvent.change(within(xVoice).getByLabelText('Original sample note'), {
+      target: { value: '64' },
+    });
+    expect(within(xVoice).getByText(/MIDI 64, E4/i)).toBeInTheDocument();
+    await user.click(within(xVoice).getByRole('button', { name: 'Test X' }));
+    expect(
+      screen.getAllByText(/X voice playing Held note for 2\.0 seconds/).length,
+    ).toBeGreaterThan(0);
+    await user.click(
+      within(xVoice).getByRole('button', {
+        name: 'Remove X uploaded sound',
+      }),
+    );
+    expect(within(xVoice).getByLabelText('Instrument sound')).toBeEnabled();
+    expect(within(xVoice).queryByText(/piano\.mp3/i)).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('timuds.preferences')).not.toContain(
+      'piano.mp3',
+    );
+  });
+
+  it('associates an unsupported audio-file error with its axis input', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByLabelText('Axis voices'));
+    const yVoice = screen.getByRole('group', { name: 'Y-axis voice' });
+    const input = within(yVoice).getByLabelText('Audio sample for y-axis');
+    fireEvent.change(input, {
+      target: { files: [audioSampleFile('notes.txt')] },
+    });
+    const alert = await within(yVoice).findByRole('alert');
+    expect(alert).toHaveTextContent(/Choose an MP3, WAV, OGG/i);
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAttribute('aria-errormessage', alert.id);
   });
 
   it('keeps inspection usable when Web Audio is unavailable', () => {

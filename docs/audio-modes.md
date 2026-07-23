@@ -49,6 +49,15 @@ warns that they may blend together. The repair button restores the contrasting
 instruments without discarding custom pitch ranges or MIDI note maps.
 Optional local MIDI note maps may replace either continuous range.
 
+Either axis may replace its synthesised instrument with a local MP3, WAV, OGG,
+M4A, AAC or WebM clip. The file is checked before the audio graph is enabled,
+decoded in the browser and kept only in memory. A valid clip is at most 10 MB
+and 0.05–30 seconds after decoding. It loops through the same filter, gain,
+pan, pulse and master path as the built-in voice. The original-note setting
+provides the reference pitch: Pitch mapping changes playback rate to transpose
+the clip, while Volume, Tone brightness and Pulse rate use the configured
+midpoint pitch. Removing the clip restores the selected instrument.
+
 ## Mono output
 
 Mono-compatible output selects Axis voices and centres both voices. TIMUDS does
@@ -75,11 +84,14 @@ range control.
 
 ## Sound lifecycle
 
-The audio graph is created only after a user action. Each of its two voices has
-a carrier, a secondary oscillator, a pitch-modulation oscillator and a
-gain-pulse oscillator. A shared noise source supplies separately filtered
-breath, bow or impact texture. Unused layers are faded to zero. Pitch, pan,
-filter, modulation and voice gain changes are smoothed.
+The audio graph is created only after an audio-related user action. Choosing a
+local sample may prepare the graph for decoding, but does not play it. Each of
+its two voices has a carrier, a secondary oscillator, a pitch-modulation
+oscillator and a gain-pulse oscillator. A shared noise source supplies
+separately filtered breath, bow or impact texture. An uploaded sample uses a
+fresh looped buffer source for each deliberate sound start and rejoins the
+voice before articulation. Unused layers are faded to zero. Pitch, pan, filter,
+modulation and voice gain changes are smoothed.
 
 The instrument choices differ in more than harmonic balance. Their profiles
 also select octave or inharmonic layers, filtered noise, attack or struck

@@ -81,6 +81,27 @@ chosen duration, rests are audible as rests, and repeated notes re-trigger drum,
 mallet and pluck attacks. Record whether any phrase makes two instruments harder
 to tell apart.
 
+## Uploaded sounds
+
+Use short, known MP3 and WAV clips for X and Y. Include mono and stereo files,
+a quiet file, and one unsupported or damaged file. Confirm that:
+
+- choosing a valid clip enables audio but remains silent;
+- the filename, decoded duration and original sample note are readable;
+- X and Y use their own clips and remain independently audible;
+- Pitch mapping transposes each clip in the expected direction, and changing
+  the original sample note corrects the reference pitch;
+- Volume, Tone brightness and Pulse rate retain their documented behaviour;
+- playback loops without a large click on the test files;
+- Stop all sound ends both samples promptly;
+- removing a sample restores the selected built-in instrument;
+- damaged, empty, oversized, overlong and browser-unsupported files produce an
+  associated error without replacing the previous sample;
+- reloading the page does not restore the clip or its filename.
+
+Repeat on each supported browser. Codec support and loop seams cannot be
+established by mocked automated audio tests.
+
 ## Progress cues
 
 Compare 12.5% and 10%. Record whether the tick is audible but unobtrusive,
