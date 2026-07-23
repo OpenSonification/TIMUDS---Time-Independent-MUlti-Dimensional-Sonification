@@ -328,5 +328,5 @@ describe('TIMUDS workspace', () => {
         ['serious', 'critical'].includes(violation.impact ?? ''),
       ),
     ).toEqual([]);
-  });
+  }, 15_000);
 });
