@@ -14,6 +14,7 @@ export interface CurveData {
 
 export type Parameterisation = 'arc-length' | 'uniform';
 export type SonificationMode = 'spatial' | 'axis-voices';
+export type ValueMapping = 'pitch' | 'volume' | 'brightness' | 'pulse';
 export type ProgressCueInterval = 'off' | '25' | '12.5' | '10';
 export type ShortcutScope = 'off' | 'workspace' | 'site-wide';
 

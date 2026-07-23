@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAXIMUM_BRIGHTNESS,
+  MAXIMUM_PULSE_RATE,
+  MINIMUM_BRIGHTNESS,
+  MINIMUM_MAPPED_LEVEL,
+  MINIMUM_PULSE_RATE,
   mapPointForSonification,
+  mapValueToBrightness,
+  mapValueToLevel,
   mapValueToPan,
+  mapValueToPulseRate,
   pitchRangesOverlap,
   ySignBlend,
 } from './sonification';
@@ -74,8 +82,107 @@ describe('spatial and axis sonification mapping', () => {
     );
     expect(mapping).toMatchObject({
       mode: 'axis-voices',
+      levels: { x: 1, y: 1 },
       pans: { x: -0.65, y: 0.65 },
     });
+  });
+
+  it('maps each Axis voice volume while holding pitch at its midpoint', () => {
+    const mapping = mapPointForSonification(
+      'axis-voices',
+      { x: -1, y: 1 },
+      {
+        x: { minimum: -1, maximum: 1 },
+        y: { minimum: -1, maximum: 1 },
+      },
+      { x: xAxis, y: yAxis },
+      0.75,
+      'volume',
+    );
+    expect(mapping.mode).toBe('axis-voices');
+    if (mapping.mode !== 'axis-voices') return;
+    expect(mapping.levels.x).toBe(MINIMUM_MAPPED_LEVEL);
+    expect(mapping.levels.y).toBe(1);
+    expect(mapping.frequencies.x).toBeCloseTo(185, 0);
+    expect(mapping.frequencies.y).toBeCloseTo(554, 0);
+  });
+
+  it('uses Y for volume at a fixed pitch in Spatial voice mode', () => {
+    const mapping = mapPointForSonification(
+      'spatial',
+      { x: 1, y: -1 },
+      {
+        x: { minimum: -1, maximum: 1 },
+        y: { minimum: -1, maximum: 1 },
+      },
+      { x: xAxis, y: yAxis },
+      0.75,
+      'volume',
+    );
+    expect(mapping.mode).toBe('spatial');
+    if (mapping.mode !== 'spatial') return;
+    expect(mapping.pan).toBe(0.75);
+    expect(mapping.level).toBe(MINIMUM_MAPPED_LEVEL);
+    expect(mapping.midi).toBe(73);
+  });
+});
+
+describe('volume mapping', () => {
+  it('stays bounded, supports inversion and centres constant domains', () => {
+    const domain = { minimum: -1, maximum: 1 };
+    expect(mapValueToLevel(-10, domain)).toBe(MINIMUM_MAPPED_LEVEL);
+    expect(mapValueToLevel(10, domain)).toBe(1);
+    expect(mapValueToLevel(-1, domain, true)).toBe(1);
+    expect(mapValueToLevel(1, domain, true)).toBe(MINIMUM_MAPPED_LEVEL);
+    expect(mapValueToLevel(4, { minimum: 4, maximum: 4 })).toBeCloseTo(0.55);
+  });
+});
+
+describe('alternative sound mappings', () => {
+  it('maps bounded brightness and pulse-rate ranges with inversion', () => {
+    const domain = { minimum: 0, maximum: 10 };
+    expect(mapValueToBrightness(0, domain)).toBe(MINIMUM_BRIGHTNESS);
+    expect(mapValueToBrightness(10, domain)).toBe(MAXIMUM_BRIGHTNESS);
+    expect(mapValueToBrightness(0, domain, true)).toBe(MAXIMUM_BRIGHTNESS);
+    expect(mapValueToPulseRate(0, domain)).toBe(MINIMUM_PULSE_RATE);
+    expect(mapValueToPulseRate(10, domain)).toBe(MAXIMUM_PULSE_RATE);
+    expect(mapValueToPulseRate(10, domain, true)).toBe(MINIMUM_PULSE_RATE);
+  });
+
+  it('holds pitch and exposes separate Axis brightness and pulse values', () => {
+    const domains = {
+      x: { minimum: -1, maximum: 1 },
+      y: { minimum: -1, maximum: 1 },
+    };
+    const brightness = mapPointForSonification(
+      'axis-voices',
+      { x: -1, y: 1 },
+      domains,
+      { x: xAxis, y: yAxis },
+      0.75,
+      'brightness',
+    );
+    const pulse = mapPointForSonification(
+      'axis-voices',
+      { x: -1, y: 1 },
+      domains,
+      { x: xAxis, y: yAxis },
+      0.75,
+      'pulse',
+    );
+    expect(brightness.mode).toBe('axis-voices');
+    expect(pulse.mode).toBe('axis-voices');
+    if (brightness.mode !== 'axis-voices' || pulse.mode !== 'axis-voices')
+      return;
+    expect(brightness.brightness).toEqual({
+      x: MINIMUM_BRIGHTNESS,
+      y: MAXIMUM_BRIGHTNESS,
+    });
+    expect(pulse.pulseRates).toEqual({
+      x: MINIMUM_PULSE_RATE,
+      y: MAXIMUM_PULSE_RATE,
+    });
+    expect(brightness.frequencies).toEqual(pulse.frequencies);
   });
 });
 

@@ -23,6 +23,7 @@ describe('versioned preferences', () => {
     savePreferences(storage, {
       ...DEFAULT_PREFERENCES,
       sonificationMode: 'axis-voices',
+      valueMapping: 'volume',
       shortcutScope: 'site-wide',
       stereoWidth: 0.5,
       testSoundDuration: 4,
@@ -35,6 +36,7 @@ describe('versioned preferences', () => {
     });
     expect(loadPreferences(storage)).toMatchObject({
       sonificationMode: 'axis-voices',
+      valueMapping: 'volume',
       shortcutScope: 'site-wide',
       stereoWidth: 0.5,
       testSoundDuration: 4,
@@ -58,6 +60,7 @@ describe('versioned preferences', () => {
         testSoundDuration: 99,
         auditionPattern: 'copyrighted-song',
         announceBenchmarks: 'yes',
+        valueMapping: 'stereo-size',
         shortcutScope: 'everywhere',
         axes: {
           x: { timbre: 'sample', lowMidi: -1, highMidi: 500, pan: -5 },
@@ -69,6 +72,7 @@ describe('versioned preferences', () => {
       testSoundDuration: 2,
       auditionPattern: 'held',
       announceBenchmarks: false,
+      valueMapping: 'pitch',
       shortcutScope: 'workspace',
       axes: { x: DEFAULT_PREFERENCES.axes.x },
     });

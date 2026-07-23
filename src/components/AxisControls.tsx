@@ -1,11 +1,17 @@
 import { INSTRUMENT_OPTIONS, INSTRUMENTS } from '../core/instruments';
 import { MAX_MIDI_FILE_BYTES } from '../core/midi';
 import { midiToNoteName } from '../core/pitch';
-import type { AxisConfig, NumericDomain, TimbreName } from '../core/types';
+import type {
+  AxisConfig,
+  NumericDomain,
+  TimbreName,
+  ValueMapping,
+} from '../core/types';
 
 interface AxisControlsProps {
   config: AxisConfig;
   domain: NumericDomain;
+  valueMapping: ValueMapping;
   midiError: string;
   onChange: (next: AxisConfig) => void;
   onMidiFile: (file: File) => Promise<void>;
@@ -17,6 +23,7 @@ interface AxisControlsProps {
 export function AxisControls({
   config,
   domain,
+  valueMapping,
   midiError,
   onChange,
   onMidiFile,
@@ -29,6 +36,12 @@ export function AxisControls({
   const midiHelpId = `${id}-midi-help`;
   const midiErrorId = `${id}-midi-error`;
   const midiMap = config.midiNoteMap;
+  const mappedProperty = {
+    pitch: 'pitch',
+    volume: 'volume',
+    brightness: 'tone brightness',
+    pulse: 'pulse rate',
+  }[valueMapping];
 
   return (
     <fieldset className={`axis-card axis-${config.key}`}>
@@ -37,7 +50,9 @@ export function AxisControls({
         Active domain: {domain.minimum.toPrecision(5)} to{' '}
         {domain.maximum.toPrecision(5)}
         {domain.minimum === domain.maximum &&
-          '. Constant values use the midpoint pitch.'}
+          (valueMapping === 'pitch'
+            ? '. Constant values use the midpoint pitch.'
+            : `. Constant values use the midpoint ${mappedProperty}.`)}
       </p>
       <div className="field-grid">
         <label htmlFor={`${id}-timbre`}>Instrument sound</label>
@@ -60,7 +75,10 @@ export function AxisControls({
           local synthesis, not recordings of acoustic instruments.
         </p>
         <label htmlFor={`${id}-gain`}>
-          Listening gain: {Math.round(config.gain * 100)}%
+          {valueMapping === 'volume'
+            ? 'Maximum listening gain'
+            : 'Listening gain'}
+          : {Math.round(config.gain * 100)}%
         </label>
         <input
           id={`${id}-gain`}
@@ -130,7 +148,10 @@ export function AxisControls({
         <p id={midiHelpId} className="fine-print">
           Choose a local .mid or .midi file up to{' '}
           {MAX_MIDI_FILE_BYTES / 1_000_000} MB. TIMUDS extracts note-on pitches,
-          sorts unique notes from low to high and maps this axis across them.
+          sorts unique notes from low to high and{' '}
+          {valueMapping === 'pitch'
+            ? 'maps this axis across them.'
+            : 'uses the middle of that palette as the fixed pitch.'}{' '}
           MIDI files contain instructions rather than recorded sound; the
           instrument selected above still produces the audio. Nothing is
           uploaded.
@@ -283,8 +304,12 @@ export function AxisControls({
           />
           <p id={`${id}-pitch-range-help`} className="fine-print full-row">
             {midiMap
-              ? 'The loaded MIDI note map currently replaces the low and high note range.'
-              : 'These endpoints define the continuous pitch range when no MIDI note map is loaded.'}
+              ? valueMapping === 'pitch'
+                ? 'The loaded MIDI note map currently replaces the low and high note range.'
+                : `The middle note of the loaded MIDI map supplies the fixed pitch while ${mappedProperty} changes.`
+              : valueMapping === 'pitch'
+                ? 'These endpoints define the continuous pitch range when no MIDI note map is loaded.'
+                : `The midpoint of these endpoints supplies the fixed pitch while ${mappedProperty} changes.`}
           </p>
           <label>
             <input
@@ -294,7 +319,7 @@ export function AxisControls({
                 onChange({ ...config, inverted: event.currentTarget.checked })
               }
             />{' '}
-            Invert pitch direction
+            Invert {mappedProperty} direction
           </label>
           <span />
           <label htmlFor={`${id}-pan`}>

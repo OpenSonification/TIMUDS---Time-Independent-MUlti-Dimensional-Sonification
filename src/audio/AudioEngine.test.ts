@@ -165,12 +165,15 @@ describe('persistent audio engine', () => {
     const engine = new AudioEngine();
     await engine.enable();
     const context = Context.latest!;
-    expect(context.oscillators).toHaveLength(6);
+    expect(context.oscillators).toHaveLength(8);
     expect(context.bufferSources).toHaveLength(2);
 
     engine.startSound({
       mode: 'spatial',
       frequency: 440,
+      level: 1,
+      brightness: 1,
+      pulseRate: 0,
       pan: 0.5,
       timbre: 'warm',
       ySignCue: true,
@@ -186,6 +189,9 @@ describe('persistent audio engine', () => {
     engine.applyFrame({
       mode: 'spatial',
       frequency: 445,
+      level: 1,
+      brightness: 1,
+      pulseRate: 0,
       pan: 0.55,
       timbre: 'warm',
       ySignCue: true,
@@ -199,7 +205,7 @@ describe('persistent audio engine', () => {
       monoCompatible: false,
     });
 
-    expect(context.oscillators).toHaveLength(6);
+    expect(context.oscillators).toHaveLength(8);
     expect(
       context.oscillators[0]!.frequency.setTargetAtTime,
     ).toHaveBeenCalled();
@@ -218,6 +224,9 @@ describe('persistent audio engine', () => {
       mode: 'axis-voices',
       axes,
       frequencies: { x: 220, y: 660 },
+      levels: { x: 1, y: 1 },
+      brightness: { x: 1, y: 1 },
+      pulseRates: { x: 0, y: 0 },
       masterVolume: 0.18,
       monoCompatible: true,
     });
@@ -233,6 +242,57 @@ describe('persistent audio engine', () => {
     );
   });
 
+  it('applies bounded mapped levels beneath each Axis listening gain', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+    engine.startSound({
+      mode: 'axis-voices',
+      axes,
+      frequencies: { x: 220, y: 660 },
+      levels: { x: 0.1, y: 4 },
+      brightness: { x: 1, y: 1 },
+      pulseRates: { x: 0, y: 0 },
+      masterVolume: 0.18,
+      monoCompatible: false,
+    });
+
+    expect(context.gains[3]!.gain.setTargetAtTime.mock.calls.at(-1)?.[0]).toBe(
+      0.7 * 0.1 * 0.34 * 0.86,
+    );
+    expect(context.gains[10]!.gain.setTargetAtTime.mock.calls.at(-1)?.[0]).toBe(
+      0.7 * 0.34 * 1.05,
+    );
+  });
+
+  it('applies mapped brightness and audio-clock pulse rates', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+    engine.startSound({
+      mode: 'axis-voices',
+      axes,
+      frequencies: { x: 220, y: 660 },
+      levels: { x: 1, y: 1 },
+      brightness: { x: 0.35, y: 2.5 },
+      pulseRates: { x: 0.75, y: 8 },
+      masterVolume: 0.18,
+      monoCompatible: false,
+    });
+
+    expect(
+      context.filters[0]!.frequency.setTargetAtTime,
+    ).toHaveBeenLastCalledWith((350 + 220 * 1.3) * 0.35, 4, expect.any(Number));
+    expect(
+      context.oscillators[3]!.frequency.setTargetAtTime,
+    ).toHaveBeenLastCalledWith(0.75, 4, expect.any(Number));
+    expect(context.gains[7]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0.7 * 0.34 * 0.86 * 0.4,
+      4,
+      expect.any(Number),
+    );
+  });
+
   it('applies clearly different filter, vibrato and envelope profiles', async () => {
     const engine = new AudioEngine();
     await engine.enable();
@@ -240,6 +300,9 @@ describe('persistent audio engine', () => {
     const frame = {
       mode: 'spatial' as const,
       frequency: 440,
+      level: 1,
+      brightness: 1,
+      pulseRate: 0,
       pan: 0,
       ySignCue: false,
       signBlend: {
@@ -301,6 +364,9 @@ describe('persistent audio engine', () => {
     const frame = {
       mode: 'spatial' as const,
       frequency: 440,
+      level: 1,
+      brightness: 1,
+      pulseRate: 0,
       pan: 0,
       ySignCue: false,
       signBlend: {
@@ -370,6 +436,9 @@ describe('persistent audio engine', () => {
     engine.startSound({
       mode: 'spatial',
       frequency: 440,
+      level: 1,
+      brightness: 1,
+      pulseRate: 0,
       pan: 0,
       timbre: 'drum',
       ySignCue: false,
@@ -406,6 +475,9 @@ describe('persistent audio engine', () => {
       {
         mode: 'spatial',
         frequency: 440,
+        level: 1,
+        brightness: 1,
+        pulseRate: 0,
         pan: 0,
         timbre: 'drum',
         ySignCue: false,
@@ -439,6 +511,9 @@ describe('persistent audio engine', () => {
       mode: 'axis-voices',
       axes,
       frequencies: { x: 220, y: 660 },
+      levels: { x: 1, y: 1 },
+      brightness: { x: 1, y: 1 },
+      pulseRates: { x: 0, y: 0 },
       masterVolume: 0.18,
       monoCompatible: false,
     });

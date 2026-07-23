@@ -4,7 +4,14 @@ import type {
   NumericDomain,
   Point,
   SonificationMode,
+  ValueMapping,
 } from './types';
+
+export const MINIMUM_MAPPED_LEVEL = 0.1;
+export const MINIMUM_BRIGHTNESS = 0.35;
+export const MAXIMUM_BRIGHTNESS = 2.5;
+export const MINIMUM_PULSE_RATE = 0.75;
+export const MAXIMUM_PULSE_RATE = 8;
 
 export interface SignBlend {
   sign: 'negative' | 'zero' | 'positive';
@@ -18,12 +25,18 @@ export interface SpatialPointMapping {
   pan: number;
   frequency: number;
   midi: number;
+  level: number;
+  brightness: number;
+  pulseRate: number;
   signBlend: SignBlend;
 }
 
 export interface AxisPointMapping {
   mode: 'axis-voices';
   frequencies: { x: number; y: number };
+  levels: { x: number; y: number };
+  brightness: { x: number; y: number };
+  pulseRates: { x: number; y: number };
   pans: { x: number; y: number };
 }
 
@@ -35,6 +48,49 @@ export function mapValueToPan(
   const width = Math.min(1, Math.max(0, stereoWidth));
   if (domain.minimum === domain.maximum) return 0;
   return width * (2 * normaliseValue(value, domain) - 1);
+}
+
+export function mapValueToLevel(
+  value: number,
+  domain: NumericDomain,
+  inverted = false,
+): number {
+  const normalised = normaliseValue(value, domain);
+  const directed = inverted ? 1 - normalised : normalised;
+  return MINIMUM_MAPPED_LEVEL + directed * (1 - MINIMUM_MAPPED_LEVEL);
+}
+
+function directedValue(
+  value: number,
+  domain: NumericDomain,
+  inverted: boolean,
+): number {
+  const normalised = normaliseValue(value, domain);
+  return inverted ? 1 - normalised : normalised;
+}
+
+export function mapValueToBrightness(
+  value: number,
+  domain: NumericDomain,
+  inverted = false,
+): number {
+  return (
+    MINIMUM_BRIGHTNESS +
+    directedValue(value, domain, inverted) *
+      (MAXIMUM_BRIGHTNESS - MINIMUM_BRIGHTNESS)
+  );
+}
+
+export function mapValueToPulseRate(
+  value: number,
+  domain: NumericDomain,
+  inverted = false,
+): number {
+  return (
+    MINIMUM_PULSE_RATE +
+    directedValue(value, domain, inverted) *
+      (MAXIMUM_PULSE_RATE - MINIMUM_PULSE_RATE)
+  );
 }
 
 export function pitchRangesOverlap(
@@ -105,28 +161,87 @@ function pitchForAxis(value: number, domain: NumericDomain, axis: AxisConfig) {
   );
 }
 
+function midpoint(domain: NumericDomain): number {
+  return domain.minimum + (domain.maximum - domain.minimum) / 2;
+}
+
 export function mapPointForSonification(
   mode: SonificationMode,
   point: Point,
   domains: Record<'x' | 'y', NumericDomain>,
   axes: Record<'x' | 'y', AxisConfig>,
   stereoWidth: number,
+  valueMapping: ValueMapping = 'pitch',
 ): SpatialPointMapping | AxisPointMapping {
   if (mode === 'spatial') {
-    const pitch = pitchForAxis(point.y, domains.y, axes.y);
+    const pitch = pitchForAxis(
+      valueMapping === 'pitch' ? point.y : midpoint(domains.y),
+      domains.y,
+      axes.y,
+    );
     return {
       mode,
       pan: mapValueToPan(point.x, domains.x, stereoWidth),
       frequency: pitch.frequency,
       midi: pitch.midi,
+      level:
+        valueMapping === 'volume'
+          ? mapValueToLevel(point.y, domains.y, axes.y.inverted)
+          : 1,
+      brightness:
+        valueMapping === 'brightness'
+          ? mapValueToBrightness(point.y, domains.y, axes.y.inverted)
+          : 1,
+      pulseRate:
+        valueMapping === 'pulse'
+          ? mapValueToPulseRate(point.y, domains.y, axes.y.inverted)
+          : 0,
       signBlend: ySignBlend(point.y, domains.y),
     };
   }
   return {
     mode,
     frequencies: {
-      x: pitchForAxis(point.x, domains.x, axes.x).frequency,
-      y: pitchForAxis(point.y, domains.y, axes.y).frequency,
+      x: pitchForAxis(
+        valueMapping === 'pitch' ? point.x : midpoint(domains.x),
+        domains.x,
+        axes.x,
+      ).frequency,
+      y: pitchForAxis(
+        valueMapping === 'pitch' ? point.y : midpoint(domains.y),
+        domains.y,
+        axes.y,
+      ).frequency,
+    },
+    levels: {
+      x:
+        valueMapping === 'volume'
+          ? mapValueToLevel(point.x, domains.x, axes.x.inverted)
+          : 1,
+      y:
+        valueMapping === 'volume'
+          ? mapValueToLevel(point.y, domains.y, axes.y.inverted)
+          : 1,
+    },
+    brightness: {
+      x:
+        valueMapping === 'brightness'
+          ? mapValueToBrightness(point.x, domains.x, axes.x.inverted)
+          : 1,
+      y:
+        valueMapping === 'brightness'
+          ? mapValueToBrightness(point.y, domains.y, axes.y.inverted)
+          : 1,
+    },
+    pulseRates: {
+      x:
+        valueMapping === 'pulse'
+          ? mapValueToPulseRate(point.x, domains.x, axes.x.inverted)
+          : 0,
+      y:
+        valueMapping === 'pulse'
+          ? mapValueToPulseRate(point.y, domains.y, axes.y.inverted)
+          : 0,
     },
     pans: { x: axes.x.pan, y: axes.y.pan },
   };

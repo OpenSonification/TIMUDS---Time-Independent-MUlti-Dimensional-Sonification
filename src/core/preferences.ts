@@ -5,6 +5,7 @@ import type {
   ShortcutScope,
   SonificationMode,
   TimbreName,
+  ValueMapping,
 } from './types';
 
 export const PREFERENCES_KEY = 'timuds.preferences';
@@ -20,6 +21,7 @@ export interface AxisPreference {
 export interface TimudsPreferences {
   version: typeof PREFERENCES_VERSION;
   sonificationMode: SonificationMode;
+  valueMapping: ValueMapping;
   progressCueInterval: ProgressCueInterval;
   shortcutScope: ShortcutScope;
   requireAltForLetters: boolean;
@@ -41,6 +43,7 @@ export interface TimudsPreferences {
 export const DEFAULT_PREFERENCES: TimudsPreferences = {
   version: PREFERENCES_VERSION,
   sonificationMode: 'spatial',
+  valueMapping: 'pitch',
   progressCueInterval: '12.5',
   shortcutScope: 'workspace',
   requireAltForLetters: false,
@@ -109,6 +112,12 @@ export function validatePreferences(value: unknown): TimudsPreferences {
     return structuredClone(DEFAULT_PREFERENCES);
 
   const modes: SonificationMode[] = ['spatial', 'axis-voices'];
+  const valueMappings: ValueMapping[] = [
+    'pitch',
+    'volume',
+    'brightness',
+    'pulse',
+  ];
   const cueIntervals: ProgressCueInterval[] = ['off', '25', '12.5', '10'];
   const scopes: ShortcutScope[] = ['off', 'workspace', 'site-wide'];
   const auditionPatterns: AuditionPatternName[] = [
@@ -123,6 +132,9 @@ export function validatePreferences(value: unknown): TimudsPreferences {
     sonificationMode: modes.includes(value.sonificationMode as SonificationMode)
       ? (value.sonificationMode as SonificationMode)
       : DEFAULT_PREFERENCES.sonificationMode,
+    valueMapping: valueMappings.includes(value.valueMapping as ValueMapping)
+      ? (value.valueMapping as ValueMapping)
+      : DEFAULT_PREFERENCES.valueMapping,
     progressCueInterval: cueIntervals.includes(
       value.progressCueInterval as ProgressCueInterval,
     )

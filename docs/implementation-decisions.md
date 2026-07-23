@@ -16,6 +16,14 @@ The positive/negative Y timbre cue is optional. Its equal-power crossfade avoids
 a hard discontinuity at zero, while the numeric sign remains the authoritative
 non-audio equivalent.
 
+The value-mapping selector uses one native dropdown because the choices are
+mutually exclusive and the list can grow without turning the panel into a bank
+of toggles. Pitch stays the default. Non-pitch choices hold a stable midpoint
+pitch so one coordinate does not alter several auditory properties at once.
+Volume retains a 10% floor, and pulse modulation retains a 20% trough, so an
+axis does not vanish solely because it reaches its minimum. Mute remains the
+explicit zero-output control.
+
 ## Orientation and safety
 
 Progress ticks are configurable because a useful orientation rate depends on

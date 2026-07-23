@@ -18,7 +18,13 @@ Detailed evidence:
 - Logical headings and native buttons, ranges, numbers, selects, text area, file input, checkboxes, disclosures, definition lists and source-point table.
 - Silent initial state. Enable audio prepares the graph without sounding it. Play, Hear and calibration are deliberate sound actions.
 - Persistent Stop all sound, low initial master gain and one shared 120 ms cancellation/fade path.
-- Spatial voice maps X to pan and Y to pitch; Axis voices adds distinct timbres and separated registers. Mono-compatible output preserves both dimensions with centred Axis voices.
+- A native dropdown selects Pitch, Volume, Tone brightness or Pulse rate.
+  Pitch is the default. Spatial voice retains X pan and applies the selected
+  property to Y; Axis voices applies it independently to X and Y.
+- Volume is bounded to 10–100% beneath the separate listening gains. Brightness
+  is bounded to 0.35–2.5 times the instrument filter and pulse rate to
+  0.75–8 Hz. The live readout exposes the exact mapped value.
+- Mono-compatible output preserves both dimensions with centred Axis voices.
 - Sixteen independently selectable synthetic timbres with visible
   descriptions, named calibration controls and a persisted 0.5–5 second
   test-sound length.
@@ -79,7 +85,11 @@ Activate **Enter two-dimensional exploration**. Focus moves to the plane control
 | Escape           | Fade preview audio, leave the mode and restore the curve position |
 | Tab / Shift+Tab  | Leave the controller normally                                     |
 
-Up always increases numeric y. Inverting Y pitch does not reverse coordinate movement. Leaving the controller makes its keys inactive immediately. The native x/y controls offer the same coordinate changes when a screen reader retains arrow keys in browse or Quick Nav mode. Users are not asked to disable their screen reader.
+Up always increases numeric y. Inverting a sound-mapping direction does not
+reverse coordinate movement. Leaving the controller makes its keys inactive
+immediately. The native x/y controls offer the same coordinate changes when a
+screen reader retains arrow keys in browse or Quick Nav mode. Users are not
+asked to disable their screen reader.
 
 ### Optional WASD
 
@@ -115,7 +125,11 @@ The explorer provides:
 
 Moving focus away from the controller fades a sustained explorer preview. Timed traversal retains its own Play, Hold and Stop state. No attempt is made to detect a screen reader.
 
-Announcement detail can be Off, Coordinates only, Coordinates and pitches, or Full position details. Coordinates only is the initial manual-movement setting. Timed playback announcements are initially Off and may be set to 1, 2, 5 or 10 seconds.
+Announcement detail can be Off, Coordinates only, Coordinates and sound values,
+or Full position details. Volume percentages, brightness multipliers and pulse
+rates replace changing-pitch details when their mapping is active. Coordinates
+only is the initial manual-movement setting. Timed playback announcements are
+initially Off and may be set to 1, 2, 5 or 10 seconds.
 
 Curve-benchmark narration is a separate opt-in setting. During playback it
 announces the first crossing of the lowest and highest X and Y source-point
@@ -138,6 +152,7 @@ sound state. Its Technical details and the Curve summary additionally expose:
 - normalised progress and elapsed time;
 - x and y coordinates;
 - notes and frequencies for both axes;
+- selected value mapping and current mapped volume, brightness or pulse rate;
 - active axis domains;
 - direction and closure;
 - whether audio is enabled and sounding;
@@ -157,7 +172,9 @@ Each axis has instrument, gain, mute, solo and test controls. Numeric
 note/frequency output and the imported MIDI palette remain available when the
 device is muted or a voice cannot be heard.
 
-No automated test can judge safe volume, instrument separation, masking, distortion, decay comfort or whether a synthetic label matches a listener’s expectation. Begin with low system output.
+No automated test can judge safe volume, instrument separation, masking,
+distortion, decay comfort, filter salience, pulse comfort or whether a
+synthetic label matches a listener’s expectation. Begin with low system output.
 
 ## Motion, zoom and reflow
 

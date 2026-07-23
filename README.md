@@ -21,6 +21,8 @@ The default circle demonstrates why this matters. Its x coordinate repeatedly ri
 - Open/closed curves, reverse traversal, reset, summaries and reproducible JSON download.
 - Constant-spatial-speed and uniform-segment traversal; timed, looped and manual control.
 - Spatial and Axis voice modes backed by one persistent local Web Audio graph.
+- A native mapping dropdown for Pitch, Volume, Tone brightness and Pulse rate;
+  Pitch remains the default.
 - Sixteen locally synthesised timbres, ranging from a plain sine reference to
   sub-bass, air jet, alarm, arcade, robot, pluck and struck-drum voices.
 - Adjustable 0.5–5 second instrument tests, with a 2-second default and longer
@@ -88,15 +90,18 @@ Malformed values are rejected rather than reinterpreted. `NaN`, infinity, missin
 
 ## Sound modes and mapping
 
-Spatial voice maps X continuously across a default stereo width of 0.75 and
-maps Y to pitch. An optional smooth timbre blend reinforces negative, zero and
-positive Y without replacing the numeric readout.
+Spatial voice maps X continuously across a default stereo width of 0.75. In the
+default Pitch mapping, Y controls pitch. The other dropdown choices let Y
+control volume, tone brightness or pulse rate at a fixed pitch. An optional
+smooth sign-colour blend is available only in Pitch mapping.
 
-Axis voices maps each dimension to its own pitch, timbre and gain. X defaults
-to MIDI 48–60 at −0.65 pan; Y defaults to MIDI 67–79 at +0.65 pan. Touching or
-overlapping custom registers produce a warning and a one-step restore action.
-Mono-compatible output selects centred Axis voices so X is not lost when stereo
-channels are combined.
+Axis voices gives each dimension its own sound. The dropdown applies the same
+mapping family to both: X changes the X voice and Y changes the Y voice. Pitch
+uses the configured registers. Volume runs from 10% to 100% of each listening
+gain. Tone brightness opens or closes each voice filter. Pulse rate runs from
+0.75 to 8 Hz. The three non-pitch mappings hold each voice at its configured
+midpoint note. X defaults to MIDI 48–60 at −0.65 pan; Y defaults to MIDI 67–79
+at +0.65 pan.
 
 Each axis has its own data domain. Automatic mode uses that axis’s minimum and
 maximum in the current curve. Manual mode accepts an explicit domain.
@@ -113,10 +118,16 @@ frequency = 440 * 2^((midi - 69) / 12)
 
 Fractional MIDI values make pitch continuous. Inversion replaces `u` with
 `1 - u`. A constant axis uses `u = 0.5`, avoiding division by zero. “Value”
-means the signed number, not its absolute magnitude. Volume controls listening
-comfort only; volume is not a data channel.
+means the signed number, not its absolute magnitude. In Volume mapping the
+coordinate-controlled level is multiplied by the separate listening gain and
+master-volume safety controls.
 
-Each axis can instead load a local `.mid` or `.midi` Standard MIDI File of up to 2 MB. TIMUDS extracts note-on pitches, removes duplicates and sorts the resulting palette from low to high. The normalised coordinate selects the nearest palette entry, so the mapping remains monotonic and inspectable. Timing, velocity, channel, program-change and effect instructions are not replayed. The instrument selector determines the generated sound.
+Each axis can instead load a local `.mid` or `.midi` Standard MIDI File of up
+to 2 MB. TIMUDS extracts note-on pitches, removes duplicates and sorts the
+resulting palette from low to high. Pitch mapping selects across that palette;
+a non-pitch mapping uses its middle note as the stable pitch. Timing, velocity,
+channel, program-change and effect instructions are not replayed. The
+instrument selector determines the generated sound.
 
 ## Traversal
 
@@ -177,10 +188,11 @@ optional, off by default and active only on the focused controller.
 
 The graph is created only after Play, Hear current position or a calibration
 action. Each long-lived voice has carrier, secondary and modulation
-oscillators. A shared noise source supplies separately filtered instrument
-texture and progress cues. Filters, gains and panners feed one conservative
-master and compressor. The same graph serves both sound modes. Pitch, pan,
-filter and instrument changes use short smoothing constants.
+oscillators plus a gain-modulation oscillator for Pulse rate. A shared noise
+source supplies separately filtered instrument texture and progress cues.
+Filters, gains and panners feed one conservative master and compressor. The
+same graph serves both sound modes. Pitch, volume, pan, brightness and pulse
+changes use short smoothing constants.
 
 The test controls can play one held note or an original MIDI-style phrase.
 Phrase note events alter pitch and rhythm while the selected synthetic

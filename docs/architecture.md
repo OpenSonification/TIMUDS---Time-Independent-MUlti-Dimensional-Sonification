@@ -30,10 +30,12 @@ Axis configuration is an array of `AxisConfig`, keyed by `x | y`. Presentation i
 Pitch functions normalise, clamp, optionally invert and convert MIDI to hertz. Without a note map they interpolate fractional MIDI. With an imported MIDI palette they select the nearest sorted note, producing a monotonic, quantised mapping. Equal domain bounds explicitly return the midpoint. Note names are the nearest named semitone; displayed frequency retains a continuous fractional MIDI value only in continuous mode.
 
 `sonification.ts` owns X-to-pan mapping, Spatial and Axis mode point mapping,
-range-overlap detection and the equal-power Y-sign blend. `instruments.ts` is
-the pure catalogue for sixteen synthetic choices. Each definition supplies a
-visible label and description plus harmonics, carrier level, pitch-tracked
-filter, articulation, vibrato and level-compensation parameters.
+bounded volume/brightness/pulse mappings, range-overlap detection and the
+equal-power Y-sign blend. Non-pitch mappings select the midpoint pitch first,
+then return a separate frame parameter. `instruments.ts` is the pure catalogue
+for sixteen synthetic choices. Each definition supplies a visible label and
+description plus harmonics, carrier level, pitch-tracked filter, articulation,
+vibrato and level-compensation parameters.
 
 `auditionPatterns.ts` holds the original note/rest patterns and scales them to a
 bounded 0.5–5 second preview. `curveBenchmarks.ts` derives the first
@@ -76,6 +78,7 @@ One `AudioEngine` owns the lifecycle:
 
 ```text
 X modulation oscillator → modulation depth → X carrier detune
+X pulse oscillator → pulse depth → X voice gain
 X secondary oscillator → layer gain ┐
 X carrier oscillator → carrier gain ┴→ X filter ┐
 noise source → X texture filter → texture gain ┴→ X articulation → X gain → X panner ┐
@@ -84,6 +87,7 @@ noise source → Y texture filter → texture gain ┬→ Y articulation → Y g
 Y carrier oscillator → carrier gain ┬→ Y filter ┘
 Y secondary oscillator → layer gain ┘
 Y modulation oscillator → modulation depth → Y carrier detune
+Y pulse oscillator → pulse depth → Y voice gain
 noise source → high-pass filter → cue gain ──────────────────────────────────────────┘
 ```
 
@@ -95,7 +99,10 @@ tracking make the synthetic instrument families. Optional octave, detuned,
 inharmonic and filtered-noise layers provide larger categorical differences;
 attack, decay and vibrato separate behaviour over time. Pure tone uses sine.
 Frequency, filter, modulation, layer, texture, voice gain, panning and master
-gain use bounded smoothing.
+gain use bounded smoothing. Brightness multiplies the instrument's calculated
+filter frequency within 80–12,000 Hz. Pulse mapping modulates the voice gain
+from 20% to 100% of its selected level using a persistent audio-rate node, so
+its timing does not depend on React or animation frames.
 
 Test patterns are scheduled by the application after a deliberate calibration
 action. Each note reuses `updateMapping`; each rest calls a short

@@ -89,6 +89,22 @@ traversal. Directly seek across several thresholds and return from a background
 tab; confirm there is no catch-up storm. Record whether the default should
 remain 12.5% or become Off.
 
+## Value mappings
+
+At low master volume, test Pitch, Volume, Tone brightness and Pulse rate on
+Circle, Diagonal line, Constant X and Constant Y. In Axis voices, confirm X and
+Y change independently. In Spatial voice, confirm X retains left-to-right
+position while Y uses the selected mapping. Check that:
+
+- Volume remains faintly audible at the minimum and reaches the selected
+  listening gain at the maximum;
+- Tone brightness is clearly darker at the minimum without becoming inaudible;
+- Pulse rate moves smoothly from a slow pulse to a rapid flutter and never
+  depends on visual frame rate;
+- non-pitch mappings hold one stable note;
+- inversion reverses only the selected sound property;
+- switching mappings does not cause an unsafe loudness jump.
+
 ## Screen-reader coexistence
 
 With speech active, record whether sustained audio masks speech, whether status

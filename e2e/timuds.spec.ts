@@ -414,6 +414,32 @@ test('selects independent instruments and imports a local MIDI note map', async 
 }) => {
   await page.locator('#sound-controls > summary').click();
   await page.getByLabel('Axis voices').check();
+  const valueMapping = page.getByLabel('What the coordinate value changes');
+  await expect(valueMapping).toHaveValue('pitch');
+  await expect(valueMapping.locator('option')).toHaveCount(4);
+  await valueMapping.selectOption('volume');
+  await expect(
+    page
+      .locator('#current-position .position-summary')
+      .getByText('Value mapping')
+      .locator('..'),
+  ).toContainText('Volume');
+  await expect(
+    page
+      .locator('#current-position .position-summary')
+      .getByText('X volume')
+      .locator('..'),
+  ).toContainText('100%');
+  await expect(
+    page
+      .locator('#current-position .position-summary')
+      .getByText('Y volume')
+      .locator('..'),
+  ).toContainText('55%');
+  await expect(page.getByText('Audio enabled').locator('..')).toContainText(
+    'No',
+  );
+  await valueMapping.selectOption('pitch');
   await page.getByText('Technical details').click();
   const xVoice = page.getByRole('group', { name: 'X-axis voice' });
   const yVoice = page.getByRole('group', { name: 'Y-axis voice' });

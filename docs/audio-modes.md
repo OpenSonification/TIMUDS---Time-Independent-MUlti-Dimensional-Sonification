@@ -8,15 +8,33 @@ two-dimensional curve. Neither mode changes point order or treats x as time.
 Spatial voice is the default. It uses one perceived voice:
 
 - x maps continuously from left to right within the selected stereo width;
-- y maps to pitch using the Y-axis domain and pitch range;
+- y maps to pitch by default, or to the selected alternative sound property;
 - the default stereo width is 0.75, leaving some margin at both extremes;
 - an optional equal-power timbre blend makes negative y more hollow and
   positive y brighter, with a small smooth region around zero.
 
 The sign cue is not a third data mapping. It reinforces the sign already shown
 in the numeric Y readout. Turning it off uses the selected synthetic timbre.
-Constant X is centred and constant Y uses the midpoint pitch, so neither case
-divides by zero.
+Constant X is centred and constant Y uses the midpoint of the selected mapping,
+so neither case divides by zero.
+
+## Value mapping
+
+The native **What the coordinate value changes** dropdown has four choices:
+
+- **Pitch (default)** moves through the configured continuous or MIDI-note
+  range.
+- **Volume** maps low to 10% and high to 100% of the selected listening gain.
+- **Tone brightness** scales the voice filter from 0.35 to 2.5 times its normal
+  value, within the engine's frequency bounds.
+- **Pulse rate** applies a smooth 0.75–8 Hz gain pulse. The pulse never removes
+  the voice completely.
+
+In Axis voices, X and Y control their own voices independently. In Spatial
+voice, X continues to control left-to-right position and Y controls the selected
+property. Volume, brightness and pulse mappings use the midpoint pitch. The
+direction inversion applies to the selected property. Changing the dropdown
+does not start audio.
 
 ## Axis voices
 
@@ -56,10 +74,10 @@ range control.
 ## Sound lifecycle
 
 The audio graph is created only after a user action. Each of its two voices has
-a carrier, a secondary oscillator and a modulation oscillator. A shared noise
-source supplies separately filtered breath, bow or impact texture. Unused
-layers are faded to zero. Pitch, pan, filter, modulation and voice gain changes
-are smoothed.
+a carrier, a secondary oscillator, a pitch-modulation oscillator and a
+gain-pulse oscillator. A shared noise source supplies separately filtered
+breath, bow or impact texture. Unused layers are faded to zero. Pitch, pan,
+filter, modulation and voice gain changes are smoothed.
 
 The instrument choices differ in more than harmonic balance. Their profiles
 also select octave or inharmonic layers, filtered noise, attack or struck

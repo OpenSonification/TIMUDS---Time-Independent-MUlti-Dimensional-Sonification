@@ -67,7 +67,10 @@ import { effectiveDomain, mapValueToPitch, sharedDomain } from './core/pitch';
 import { generatePreset, PRESET_NAMES, type PresetName } from './core/presets';
 import { resolveShortcut } from './core/shortcuts';
 import {
+  mapValueToBrightness,
   mapPointForSonification,
+  mapValueToLevel,
+  mapValueToPulseRate,
   pitchRangesOverlap,
 } from './core/sonification';
 import { timedProgress, transitionTransport } from './core/transport';
@@ -82,6 +85,7 @@ import type {
   ShortcutScope,
   SonificationMode,
   TransportState,
+  ValueMapping,
 } from './core/types';
 
 const DEFAULT_CURVE = generatePreset('Circle');
@@ -143,6 +147,50 @@ const BENCHMARK_LABELS: Record<CurveBenchmarkKind, string> = {
   'constant-y': 'Y is constant',
 };
 
+const VALUE_MAPPING_LABELS: Record<ValueMapping, string> = {
+  pitch: 'Pitch',
+  volume: 'Volume',
+  brightness: 'Tone brightness',
+  pulse: 'Pulse rate',
+};
+
+const AXIS_MAPPING_DESCRIPTIONS: Record<ValueMapping, string> = {
+  pitch: 'Each coordinate moves its voice through the configured note range.',
+  volume:
+    'Each coordinate changes its voice from 10% to 100% of the selected listening gain; pitch stays fixed.',
+  brightness:
+    'Each coordinate changes its voice from dark and filtered to bright and open; pitch stays fixed.',
+  pulse:
+    'Each coordinate changes its voice from a slow 0.75 Hz pulse to a rapid 8 Hz pulse; pitch stays fixed.',
+};
+
+const SPATIAL_MAPPING_DESCRIPTIONS: Record<ValueMapping, string> = {
+  pitch: 'X sets left-to-right position and Y moves through the note range.',
+  volume:
+    'X sets left-to-right position and Y changes volume from 10% to 100% at a fixed pitch.',
+  brightness:
+    'X sets left-to-right position and Y changes the sound from dark to bright at a fixed pitch.',
+  pulse:
+    'X sets left-to-right position and Y changes pulse speed from 0.75 to 8 Hz at a fixed pitch.',
+};
+
+function mappedAxisTerm(mapping: Exclude<ValueMapping, 'pitch'>): string {
+  if (mapping === 'volume') return 'volume';
+  if (mapping === 'brightness') return 'brightness';
+  return 'pulse rate';
+}
+
+function formatMappedSoundValue(
+  mapping: Exclude<ValueMapping, 'pitch'>,
+  level: number,
+  brightness: number,
+  pulseRate: number,
+): string {
+  if (mapping === 'volume') return `${Math.round(level * 100)}%`;
+  if (mapping === 'brightness') return `${brightness.toFixed(2)}×`;
+  return `${pulseRate.toFixed(2)} Hz`;
+}
+
 function benchmarkAnnouncement(benchmark: CurveBenchmark): string {
   const labels = benchmark.kinds.map((kind) => BENCHMARK_LABELS[kind]);
   const joined =
@@ -177,6 +225,7 @@ function audioFrameForPoint(
   frameAxes: AxisConfig[],
   domains: Record<AxisKey, NumericDomain>,
   mode: SonificationMode,
+  valueMapping: ValueMapping,
   stereoWidth: number,
   spatialTimbre: AxisConfig['timbre'],
   ySignCue: boolean,
@@ -192,15 +241,19 @@ function audioFrameForPoint(
     domains,
     configs,
     stereoWidth,
+    valueMapping,
   );
   if (mapping.mode === 'spatial') {
     return {
       mode: 'spatial',
       frequency: mapping.frequency,
+      level: mapping.level,
+      brightness: mapping.brightness,
+      pulseRate: mapping.pulseRate,
       pan: mapping.pan,
       signBlend: mapping.signBlend,
       timbre: spatialTimbre,
-      ySignCue,
+      ySignCue: valueMapping === 'pitch' && ySignCue,
       masterVolume,
       monoCompatible,
     };
@@ -208,6 +261,9 @@ function audioFrameForPoint(
   return {
     mode: 'axis-voices',
     frequencies: mapping.frequencies,
+    levels: mapping.levels,
+    brightness: mapping.brightness,
+    pulseRates: mapping.pulseRates,
     axes: frameAxes,
     masterVolume,
     monoCompatible,
@@ -294,6 +350,9 @@ export function App() {
         ? 'axis-voices'
         : initialPreferences.sonificationMode,
     );
+  const [valueMapping, setValueMapping] = useState<ValueMapping>(
+    initialPreferences.valueMapping,
+  );
   const [stereoWidth, setStereoWidth] = useState(
     initialPreferences.stereoWidth,
   );
@@ -458,10 +517,66 @@ export function App() {
       Object.fromEntries(
         axes.map((axis) => [
           axis.key,
-          pitchForAxis(displayedPoint[axis.key], activeDomains[axis.key], axis),
+          pitchForAxis(
+            valueMapping === 'pitch'
+              ? displayedPoint[axis.key]
+              : (activeDomains[axis.key].minimum +
+                  activeDomains[axis.key].maximum) /
+                  2,
+            activeDomains[axis.key],
+            axis,
+          ),
         ]),
       ) as Record<AxisKey, ReturnType<typeof mapValueToPitch>>,
-    [activeDomains, axes, displayedPoint],
+    [activeDomains, axes, displayedPoint, valueMapping],
+  );
+  const currentLevels = useMemo(
+    () =>
+      Object.fromEntries(
+        axes.map((axis) => [
+          axis.key,
+          valueMapping === 'volume'
+            ? mapValueToLevel(
+                displayedPoint[axis.key],
+                activeDomains[axis.key],
+                axis.inverted,
+              )
+            : 1,
+        ]),
+      ) as Record<AxisKey, number>,
+    [activeDomains, axes, displayedPoint, valueMapping],
+  );
+  const currentBrightness = useMemo(
+    () =>
+      Object.fromEntries(
+        axes.map((axis) => [
+          axis.key,
+          valueMapping === 'brightness'
+            ? mapValueToBrightness(
+                displayedPoint[axis.key],
+                activeDomains[axis.key],
+                axis.inverted,
+              )
+            : 1,
+        ]),
+      ) as Record<AxisKey, number>,
+    [activeDomains, axes, displayedPoint, valueMapping],
+  );
+  const currentPulseRates = useMemo(
+    () =>
+      Object.fromEntries(
+        axes.map((axis) => [
+          axis.key,
+          valueMapping === 'pulse'
+            ? mapValueToPulseRate(
+                displayedPoint[axis.key],
+                activeDomains[axis.key],
+                axis.inverted,
+              )
+            : 0,
+        ]),
+      ) as Record<AxisKey, number>,
+    [activeDomains, axes, displayedPoint, valueMapping],
   );
   const sonificationMapping = useMemo(
     () =>
@@ -471,8 +586,16 @@ export function App() {
         activeDomains,
         axisConfigs,
         stereoWidth,
+        valueMapping,
       ),
-    [activeDomains, axisConfigs, displayedPoint, sonificationMode, stereoWidth],
+    [
+      activeDomains,
+      axisConfigs,
+      displayedPoint,
+      sonificationMode,
+      stereoWidth,
+      valueMapping,
+    ],
   );
   const audioFrame = useMemo<AudioFrame>(
     () =>
@@ -480,16 +603,22 @@ export function App() {
         ? {
             mode: 'spatial',
             frequency: sonificationMapping.frequency,
+            level: sonificationMapping.level,
+            brightness: sonificationMapping.brightness,
+            pulseRate: sonificationMapping.pulseRate,
             pan: sonificationMapping.pan,
             signBlend: sonificationMapping.signBlend,
             timbre: spatialTimbre,
-            ySignCue,
+            ySignCue: valueMapping === 'pitch' && ySignCue,
             masterVolume,
             monoCompatible,
           }
         : {
             mode: 'axis-voices',
             frequencies: sonificationMapping.frequencies,
+            levels: sonificationMapping.levels,
+            brightness: sonificationMapping.brightness,
+            pulseRates: sonificationMapping.pulseRates,
             axes,
             masterVolume,
             monoCompatible,
@@ -500,6 +629,7 @@ export function App() {
       monoCompatible,
       sonificationMapping,
       spatialTimbre,
+      valueMapping,
       ySignCue,
     ],
   );
@@ -557,6 +687,7 @@ export function App() {
       testSoundDuration,
       auditionPattern,
       announceBenchmarks,
+      valueMapping,
       visibleStep: followStep,
       axes: persistedAxes,
     };
@@ -578,6 +709,7 @@ export function App() {
     spatialTimbre,
     stereoWidth,
     testSoundDuration,
+    valueMapping,
     ySignCue,
   ]);
 
@@ -614,6 +746,7 @@ export function App() {
           axes,
           activeDomains,
           sonificationMode,
+          valueMapping,
           stereoWidth,
           spatialTimbre,
           ySignCue,
@@ -708,6 +841,7 @@ export function App() {
     spatialTimbre,
     stereoWidth,
     transport.status,
+    valueMapping,
     ySignCue,
   ]);
 
@@ -817,6 +951,7 @@ export function App() {
       frameAxes,
       activeDomains,
       sonificationMode,
+      valueMapping,
       stereoWidth,
       spatialTimbre,
       ySignCue,
@@ -836,13 +971,38 @@ export function App() {
     const pitches = Object.fromEntries(
       axes.map((axis) => [
         axis.key,
-        pitchForAxis(point[axis.key], activeDomains[axis.key], axis),
+        pitchForAxis(
+          valueMapping === 'pitch'
+            ? point[axis.key]
+            : (activeDomains[axis.key].minimum +
+                activeDomains[axis.key].maximum) /
+                2,
+          activeDomains[axis.key],
+          axis,
+        ),
       ]),
     ) as Record<AxisKey, ReturnType<typeof mapValueToPitch>>;
-    const withPitches = `${base} X ${pitches.x.noteName}, ${pitches.x.frequency.toFixed(1)} hertz. Y ${pitches.y.noteName}, ${pitches.y.frequency.toFixed(1)} hertz.`;
+    let soundValues = `X ${pitches.x.noteName}, ${pitches.x.frequency.toFixed(1)} hertz. Y ${pitches.y.noteName}, ${pitches.y.frequency.toFixed(1)} hertz.`;
+    if (valueMapping === 'volume') {
+      soundValues =
+        sonificationMode === 'axis-voices'
+          ? `X volume ${Math.round(mapValueToLevel(point.x, activeDomains.x, axisConfigs.x.inverted) * 100)} percent at ${pitches.x.noteName}. Y volume ${Math.round(mapValueToLevel(point.y, activeDomains.y, axisConfigs.y.inverted) * 100)} percent at ${pitches.y.noteName}.`
+          : `Y volume ${Math.round(mapValueToLevel(point.y, activeDomains.y, axisConfigs.y.inverted) * 100)} percent at ${pitches.y.noteName}. X controls stereo position.`;
+    } else if (valueMapping === 'brightness') {
+      soundValues =
+        sonificationMode === 'axis-voices'
+          ? `X brightness ${mapValueToBrightness(point.x, activeDomains.x, axisConfigs.x.inverted).toFixed(2)}. Y brightness ${mapValueToBrightness(point.y, activeDomains.y, axisConfigs.y.inverted).toFixed(2)}. Fixed pitches ${pitches.x.noteName} and ${pitches.y.noteName}.`
+          : `Y brightness ${mapValueToBrightness(point.y, activeDomains.y, axisConfigs.y.inverted).toFixed(2)} at ${pitches.y.noteName}. X controls stereo position.`;
+    } else if (valueMapping === 'pulse') {
+      soundValues =
+        sonificationMode === 'axis-voices'
+          ? `X pulse ${mapValueToPulseRate(point.x, activeDomains.x, axisConfigs.x.inverted).toFixed(1)} hertz. Y pulse ${mapValueToPulseRate(point.y, activeDomains.y, axisConfigs.y.inverted).toFixed(1)} hertz. Fixed pitches ${pitches.x.noteName} and ${pitches.y.noteName}.`
+          : `Y pulse ${mapValueToPulseRate(point.y, activeDomains.y, axisConfigs.y.inverted).toFixed(1)} hertz at ${pitches.y.noteName}. X controls stereo position.`;
+    }
+    const withSoundValues = `${base} ${soundValues}`;
     if (announcementDetail === 'coordinates-pitches' || progress === null)
-      return withPitches;
-    return `${withPitches} Curve progress ${(progress * 100).toFixed(1)}%. ${reverse ? 'Reverse' : 'Forward'} traversal.`;
+      return withSoundValues;
+    return `${withSoundValues} Curve progress ${(progress * 100).toFixed(1)}%. ${reverse ? 'Reverse' : 'Forward'} traversal.`;
   }
 
   function queueExplorerAnnouncement(point: Point): void {
@@ -948,10 +1108,29 @@ export function App() {
       engine.startSound(frameForPoint(startPoint));
       setAudioSounding(true);
       dispatch({ type: 'PLAY' });
+      const spatialMessages: Record<ValueMapping, string> = {
+        pitch: 'Playing. X controls stereo position and Y controls pitch.',
+        volume:
+          'Playing. X controls stereo position and Y controls volume at a fixed pitch.',
+        brightness:
+          'Playing. X controls stereo position and Y controls tone brightness at a fixed pitch.',
+        pulse:
+          'Playing. X controls stereo position and Y controls pulse rate at a fixed pitch.',
+      };
+      const axisMessages: Record<ValueMapping, string> = {
+        pitch:
+          'Playing the separate X and Y voices with coordinate-controlled pitch.',
+        volume:
+          'Playing the separate X and Y voices with coordinate-controlled volume and fixed pitches.',
+        brightness:
+          'Playing the separate X and Y voices with coordinate-controlled brightness and fixed pitches.',
+        pulse:
+          'Playing the separate X and Y voices with coordinate-controlled pulse rates and fixed pitches.',
+      };
       const playingMessage =
         sonificationMode === 'spatial'
-          ? 'Playing. X controls stereo position and Y controls pitch.'
-          : 'Playing the separate X and Y voices.';
+          ? spatialMessages[valueMapping]
+          : axisMessages[valueMapping];
       const startingBenchmark = announceBenchmarks
         ? benchmarks.find(({ progress }) => Math.abs(progress - start) < 1e-9)
         : undefined;
@@ -1019,6 +1198,35 @@ export function App() {
       next === 'spatial'
         ? 'Spatial voice selected. X controls stereo position and Y controls pitch.'
         : 'Axis voices selected. X and Y use separate sounds.',
+    );
+  }
+
+  function changeValueMapping(next: ValueMapping): void {
+    if (next === valueMapping) return;
+    setValueMapping(next);
+    const axisMessages: Record<ValueMapping, string> = {
+      pitch: 'Pitch mapping selected. Coordinate values change pitch.',
+      volume:
+        'Volume mapping selected. X and Y each change their voice volume while pitch stays fixed.',
+      brightness:
+        'Tone brightness mapping selected. X and Y each open or darken their voice filter while pitch stays fixed.',
+      pulse:
+        'Pulse rate mapping selected. X and Y each change their voice pulse speed while pitch stays fixed.',
+    };
+    const spatialMessages: Record<ValueMapping, string> = {
+      pitch:
+        'Pitch mapping selected. Y changes pitch while X retains its stereo position.',
+      volume:
+        'Volume mapping selected. Y changes volume while X retains its stereo position.',
+      brightness:
+        'Tone brightness mapping selected. Y changes brightness while X retains its stereo position.',
+      pulse:
+        'Pulse rate mapping selected. Y changes pulse speed while X retains its stereo position.',
+    };
+    setAnnouncement(
+      sonificationMode === 'axis-voices'
+        ? axisMessages[next]
+        : spatialMessages[next],
     );
   }
 
@@ -1480,6 +1688,7 @@ export function App() {
     setMidiErrors({ x: '', y: '' });
     setUseSharedDomain(false);
     setSonificationModeState(DEFAULT_PREFERENCES.sonificationMode);
+    setValueMapping(DEFAULT_PREFERENCES.valueMapping);
     setStereoWidth(DEFAULT_PREFERENCES.stereoWidth);
     setMonoCompatibleState(DEFAULT_PREFERENCES.monoCompatible);
     setYSignCue(DEFAULT_PREFERENCES.ySignCue);
@@ -1510,11 +1719,12 @@ export function App() {
   function downloadConfiguration(): void {
     const payload = {
       application: 'TIMUDS',
-      schemaVersion: 2,
+      schemaVersion: 3,
       curve: { ...curve, closed },
       traversal: { durationSeconds: duration, parameterisation, reverse, loop },
       mapping: {
         sonificationMode,
+        valueMapping,
         axes,
         sharedDomain: useSharedDomain,
         stereoWidth,
@@ -1706,6 +1916,38 @@ export function App() {
                   </dd>
                 </div>
                 <div>
+                  <dt>Value mapping</dt>
+                  <dd>{VALUE_MAPPING_LABELS[valueMapping]}</dd>
+                </div>
+                {valueMapping !== 'pitch' && (
+                  <>
+                    {sonificationMode === 'axis-voices' && (
+                      <div className="coordinate-x">
+                        <dt>X {mappedAxisTerm(valueMapping)}</dt>
+                        <dd>
+                          {formatMappedSoundValue(
+                            valueMapping,
+                            currentLevels.x,
+                            currentBrightness.x,
+                            currentPulseRates.x,
+                          )}
+                        </dd>
+                      </div>
+                    )}
+                    <div className="coordinate-y">
+                      <dt>Y {mappedAxisTerm(valueMapping)}</dt>
+                      <dd>
+                        {formatMappedSoundValue(
+                          valueMapping,
+                          currentLevels.y,
+                          currentBrightness.y,
+                          currentPulseRates.y,
+                        )}
+                      </dd>
+                    </div>
+                  </>
+                )}
+                <div>
                   <dt>Navigation</dt>
                   <dd>
                     {explorerActive ? 'Exploring plane' : 'Following curve'}
@@ -1740,6 +1982,15 @@ export function App() {
                     <dd>{stateLabel[transport.status]}</dd>
                   </div>
                   <div>
+                    <dt>Value mapping</dt>
+                    <dd>
+                      {VALUE_MAPPING_LABELS[valueMapping]}.{' '}
+                      {sonificationMode === 'axis-voices'
+                        ? AXIS_MAPPING_DESCRIPTIONS[valueMapping]
+                        : SPATIAL_MAPPING_DESCRIPTIONS[valueMapping]}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>Progress</dt>
                     <dd>{(transport.progress * 100).toFixed(1)}%</dd>
                   </div>
@@ -1769,6 +2020,20 @@ export function App() {
                     <dt>X frequency</dt>
                     <dd>{currentPitches.x.frequency.toFixed(1)} Hz</dd>
                   </div>
+                  {valueMapping !== 'pitch' &&
+                    sonificationMode === 'axis-voices' && (
+                      <div className="coordinate-x">
+                        <dt>X mapped {mappedAxisTerm(valueMapping)}</dt>
+                        <dd>
+                          {formatMappedSoundValue(
+                            valueMapping,
+                            currentLevels.x,
+                            currentBrightness.x,
+                            currentPulseRates.x,
+                          )}
+                        </dd>
+                      </div>
+                    )}
                   <div className="coordinate-y">
                     <dt>Y value</dt>
                     <dd>{formatNumber(displayedPoint.y)}</dd>
@@ -1781,6 +2046,19 @@ export function App() {
                     <dt>Y frequency</dt>
                     <dd>{currentPitches.y.frequency.toFixed(1)} Hz</dd>
                   </div>
+                  {valueMapping !== 'pitch' && (
+                    <div className="coordinate-y">
+                      <dt>Y mapped {mappedAxisTerm(valueMapping)}</dt>
+                      <dd>
+                        {formatMappedSoundValue(
+                          valueMapping,
+                          currentLevels.y,
+                          currentBrightness.y,
+                          currentPulseRates.y,
+                        )}
+                      </dd>
+                    </div>
+                  )}
                   <div>
                     <dt>X domain</dt>
                     <dd>
@@ -1827,6 +2105,14 @@ export function App() {
                           : `Continuous MIDI ${axis.lowMidi} to ${axis.highMidi}.`}{' '}
                         {axis.muted ? 'Muted' : 'Not muted'},{' '}
                         {axis.solo ? 'soloed' : 'not soloed'}
+                        {valueMapping !== 'pitch' &&
+                          sonificationMode === 'axis-voices' &&
+                          `. Mapped ${mappedAxisTerm(valueMapping)} ${formatMappedSoundValue(
+                            valueMapping,
+                            currentLevels[axis.key],
+                            currentBrightness[axis.key],
+                            currentPulseRates[axis.key],
+                          )}`}
                       </dd>
                     </div>
                   ))}
@@ -1840,9 +2126,9 @@ export function App() {
                   </div>
                 </dl>
                 <p className="mapping-note">
-                  Pitch follows the signed value on each axis. A loaded MIDI map
-                  quantises that axis to its imported note palette. Gain changes
-                  the listening level.
+                  {sonificationMode === 'axis-voices'
+                    ? AXIS_MAPPING_DESCRIPTIONS[valueMapping]
+                    : SPATIAL_MAPPING_DESCRIPTIONS[valueMapping]}
                 </p>
               </details>
             </aside>
@@ -2048,7 +2334,7 @@ export function App() {
                   <option value="off">Off</option>
                   <option value="coordinates">Coordinates only</option>
                   <option value="coordinates-pitches">
-                    Coordinates and pitches
+                    Coordinates and sound values
                   </option>
                   <option value="full">Full position details</option>
                 </select>
@@ -2480,8 +2766,7 @@ export function App() {
                     Spatial voice
                   </label>
                   <p className="fine-print">
-                    One sound: X sets its left-to-right position and Y sets
-                    pitch.
+                    {SPATIAL_MAPPING_DESCRIPTIONS[valueMapping]}
                   </p>
                   <label>
                     <input
@@ -2494,10 +2779,38 @@ export function App() {
                     Axis voices
                   </label>
                   <p className="fine-print">
-                    Separate X and Y sounds with independent instruments and
-                    pitch ranges.
+                    Separate X and Y sounds.{' '}
+                    {AXIS_MAPPING_DESCRIPTIONS[valueMapping]}
                   </p>
                 </fieldset>
+                <div className="field-grid value-mapping-control">
+                  <label htmlFor="value-mapping">
+                    What the coordinate value changes
+                  </label>
+                  <select
+                    id="value-mapping"
+                    value={valueMapping}
+                    aria-describedby="value-mapping-description"
+                    onChange={(event) =>
+                      changeValueMapping(
+                        event.currentTarget.value as ValueMapping,
+                      )
+                    }
+                  >
+                    <option value="pitch">Pitch (default)</option>
+                    <option value="volume">Volume</option>
+                    <option value="brightness">Tone brightness</option>
+                    <option value="pulse">Pulse rate</option>
+                  </select>
+                  <p
+                    id="value-mapping-description"
+                    className="fine-print full-row"
+                  >
+                    {sonificationMode === 'axis-voices'
+                      ? AXIS_MAPPING_DESCRIPTIONS[valueMapping]
+                      : SPATIAL_MAPPING_DESCRIPTIONS[valueMapping]}
+                  </p>
+                </div>
                 <div className="global-audio-controls">
                   <label htmlFor="master-volume">
                     Master volume: {Math.round(masterVolume * 100)}%
@@ -2624,7 +2937,7 @@ export function App() {
                           event.currentTarget.value as AxisConfig['timbre'],
                         )
                       }
-                      disabled={ySignCue}
+                      disabled={valueMapping === 'pitch' && ySignCue}
                     >
                       {INSTRUMENT_OPTIONS.map((instrument) => (
                         <option key={instrument.value} value={instrument.value}>
@@ -2650,6 +2963,7 @@ export function App() {
                       <input
                         type="checkbox"
                         checked={ySignCue}
+                        disabled={valueMapping !== 'pitch'}
                         onChange={(event) =>
                           setYSignCue(event.currentTarget.checked)
                         }
@@ -2657,14 +2971,14 @@ export function App() {
                       Blend hollow and bright colour around Y zero
                     </label>
                     <p className="fine-print full-row">
-                      The blend changes smoothly and is optional; the numeric X
-                      and Y readout always carries the same information without
-                      sound.
+                      {valueMapping !== 'pitch'
+                        ? `The sign-colour blend is unavailable in ${VALUE_MAPPING_LABELS[valueMapping]} mapping so Y changes only that sound property.`
+                        : 'The blend changes smoothly and is optional; the numeric X and Y readout always carries the same information without sound.'}
                     </p>
                   </div>
                 ) : (
                   <>
-                    {rangesOverlap && (
+                    {valueMapping === 'pitch' && rangesOverlap && (
                       <div className="warning range-warning" role="note">
                         <p>
                           The X and Y pitch ranges overlap, so the two voices
@@ -2685,6 +2999,7 @@ export function App() {
                           key={axis.key}
                           config={axis}
                           domain={activeDomains[axis.key]}
+                          valueMapping={valueMapping}
                           midiError={midiErrors[axis.key]}
                           onChange={(next) => updateAxis(axis.key, next)}
                           onMidiFile={(file) =>
@@ -2810,9 +3125,9 @@ export function App() {
                   <h3>Text readout</h3>
                   <p>
                     The current-position section remains selectable without
-                    audio. It includes coordinates, notes, frequencies, domains,
-                    instruments, MIDI pitch sources, voice states and traversal
-                    state.
+                    audio. It includes coordinates, notes, frequencies, mapped
+                    sound values, domains, instruments, MIDI pitch sources,
+                    voice states and traversal state.
                   </p>
                 </div>
                 <div>
@@ -2899,9 +3214,10 @@ export function App() {
                     </dd>
                   </div>
                   <div>
-                    <dt>Pitch mapping</dt>
+                    <dt>Value mapping</dt>
                     <dd>
-                      The rule that converts a coordinate into a frequency.
+                      The rule that converts a coordinate into pitch, volume,
+                      tone brightness or pulse rate.
                     </dd>
                   </div>
                   <div>

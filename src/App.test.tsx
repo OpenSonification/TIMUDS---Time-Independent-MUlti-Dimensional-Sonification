@@ -226,6 +226,9 @@ describe('TIMUDS workspace', () => {
     render(<App />);
     expect(screen.getByLabelText('Spatial voice')).toBeChecked();
     expect(screen.getByLabelText('Axis voices')).not.toBeChecked();
+    expect(
+      screen.getByLabelText('What the coordinate value changes'),
+    ).toHaveValue('pitch');
     const readout = within(
       document.querySelector<HTMLElement>('#current-position')!,
     );
@@ -271,6 +274,53 @@ describe('TIMUDS workspace', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('maps X and Y to bounded volume while holding their pitches steady', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByLabelText('Axis voices'));
+    await user.selectOptions(
+      screen.getByLabelText('What the coordinate value changes'),
+      'volume',
+    );
+
+    expect(MockAudioContext.constructions).toBe(0);
+    const summary = within(
+      document.querySelector<HTMLElement>(
+        '#current-position .position-summary',
+      )!,
+    );
+    expect(
+      summary.getByText('Value mapping').nextElementSibling,
+    ).toHaveTextContent('Volume');
+    expect(summary.getByText('X volume').nextElementSibling).toHaveTextContent(
+      '100%',
+    );
+    expect(summary.getByText('Y volume').nextElementSibling).toHaveTextContent(
+      '55%',
+    );
+    const xVoice = screen.getByRole('group', { name: 'X-axis voice' });
+    expect(
+      within(xVoice).getByLabelText(/Maximum listening gain/),
+    ).toBeInTheDocument();
+    expect(
+      within(xVoice).getByLabelText('Invert volume direction'),
+    ).toBeInTheDocument();
+
+    const mappingSelect = screen.getByLabelText(
+      'What the coordinate value changes',
+    );
+    expect(within(mappingSelect).getAllByRole('option')).toHaveLength(4);
+    await user.selectOptions(mappingSelect, 'brightness');
+    expect(
+      summary.getByText('X brightness').nextElementSibling,
+    ).toHaveTextContent('2.50×');
+    await user.selectOptions(mappingSelect, 'pulse');
+    expect(
+      summary.getByText('X pulse rate').nextElementSibling,
+    ).toHaveTextContent('8.00 Hz');
+    expect(MockAudioContext.constructions).toBe(0);
+  });
+
   it('switches to centred Axis voices when mono compatibility is enabled', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -294,6 +344,10 @@ describe('TIMUDS workspace', () => {
       target: { value: '4' },
     });
     await user.selectOptions(screen.getByLabelText('Test pattern'), 'bebop');
+    await user.selectOptions(
+      screen.getByLabelText('What the coordinate value changes'),
+      'volume',
+    );
     await user.click(
       screen.getByLabelText('Announce curve benchmarks during playback'),
     );
@@ -309,6 +363,9 @@ describe('TIMUDS workspace', () => {
     expect(screen.getByLabelText('Shortcut scope')).toHaveValue('site-wide');
     expect(screen.getByLabelText(/Test sound length/)).toHaveValue('4');
     expect(screen.getByLabelText('Test pattern')).toHaveValue('bebop');
+    expect(
+      screen.getByLabelText('What the coordinate value changes'),
+    ).toHaveValue('volume');
     expect(
       screen.getByLabelText('Announce curve benchmarks during playback'),
     ).toBeChecked();

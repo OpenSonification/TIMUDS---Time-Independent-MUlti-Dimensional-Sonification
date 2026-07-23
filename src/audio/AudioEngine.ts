@@ -22,6 +22,8 @@ interface Voice {
   secondaryGain: GainNode;
   textureFilter: BiquadFilterNode;
   textureGain: GainNode;
+  pulseOscillator: OscillatorNode;
+  pulseDepth: GainNode;
   filter: BiquadFilterNode;
   articulation: GainNode;
   gain: GainNode;
@@ -40,12 +42,18 @@ interface BaseAudioFrame {
 export interface AxisVoicesAudioFrame extends BaseAudioFrame {
   mode: 'axis-voices';
   frequencies: Record<AxisKey, number>;
+  levels: Record<AxisKey, number>;
+  brightness: Record<AxisKey, number>;
+  pulseRates: Record<AxisKey, number>;
   axes: AxisConfig[];
 }
 
 export interface SpatialAudioFrame extends BaseAudioFrame {
   mode: 'spatial';
   frequency: number;
+  level: number;
+  brightness: number;
+  pulseRate: number;
   pan: number;
   timbre: TimbreName;
   ySignCue: boolean;
@@ -157,6 +165,8 @@ export class AudioEngine {
       const textureFilter = context.createBiquadFilter();
       const textureGain = context.createGain();
       const carrierGain = context.createGain();
+      const pulseOscillator = context.createOscillator();
+      const pulseDepth = context.createGain();
       oscillator.frequency.value = 220;
       carrierGain.gain.value = 1;
       modulator.type = 'sine';
@@ -172,6 +182,9 @@ export class AudioEngine {
       textureFilter.frequency.value = 2500;
       textureFilter.Q.value = 0.35;
       textureGain.gain.value = 0;
+      pulseOscillator.type = 'sine';
+      pulseOscillator.frequency.value = 1;
+      pulseDepth.gain.value = 0;
       articulation.gain.value = 1;
       gain.gain.value = 0;
       oscillator
@@ -187,9 +200,11 @@ export class AudioEngine {
         .connect(textureFilter)
         .connect(textureGain)
         .connect(articulation);
+      pulseOscillator.connect(pulseDepth).connect(gain.gain);
       oscillator.start();
       modulator.start();
       secondaryOscillator.start();
+      pulseOscillator.start();
       this.voices.set(axis, {
         oscillator,
         carrierGain,
@@ -199,6 +214,8 @@ export class AudioEngine {
         secondaryGain,
         textureFilter,
         textureGain,
+        pulseOscillator,
+        pulseDepth,
         filter,
         articulation,
         gain,
@@ -241,25 +258,31 @@ export class AudioEngine {
       const anySolo = frame.axes.some((axis) => axis.solo);
       for (const config of frame.axes) {
         const audible = !config.muted && (!anySolo || config.solo);
+        const mappedLevel = Math.min(1, Math.max(0, frame.levels[config.key]));
         this.applyVoice(
           config.key,
           frame.frequencies[config.key],
           config.timbre,
-          audible ? config.gain * 0.34 : 0,
+          audible ? config.gain * mappedLevel * 0.34 : 0,
           frame.monoCompatible ? 0 : config.pan,
+          frame.brightness[config.key],
+          frame.pulseRates[config.key],
           forceArticulation,
           struckPreviewDurationSeconds,
         );
       }
     } else {
       const pan = frame.monoCompatible ? 0 : frame.pan;
+      const mappedLevel = Math.min(1, Math.max(0, frame.level));
       if (frame.ySignCue) {
         this.applyVoice(
           'x',
           frame.frequency,
           'hollow',
-          frame.signBlend.negativeGain * 0.31,
+          frame.signBlend.negativeGain * mappedLevel * 0.31,
           pan,
+          frame.brightness,
+          frame.pulseRate,
           forceArticulation,
           struckPreviewDurationSeconds,
         );
@@ -267,8 +290,10 @@ export class AudioEngine {
           'y',
           frame.frequency,
           'bright',
-          frame.signBlend.positiveGain * 0.31,
+          frame.signBlend.positiveGain * mappedLevel * 0.31,
           pan,
+          frame.brightness,
+          frame.pulseRate,
           forceArticulation,
           struckPreviewDurationSeconds,
         );
@@ -277,8 +302,10 @@ export class AudioEngine {
           'x',
           frame.frequency,
           frame.timbre,
-          0.34,
+          mappedLevel * 0.34,
           pan,
+          frame.brightness,
+          frame.pulseRate,
           forceArticulation,
           struckPreviewDurationSeconds,
         );
@@ -288,6 +315,8 @@ export class AudioEngine {
           frame.timbre,
           0,
           pan,
+          frame.brightness,
+          frame.pulseRate,
           forceArticulation,
           struckPreviewDurationSeconds,
         );
@@ -309,6 +338,8 @@ export class AudioEngine {
     timbre: TimbreName,
     gain: number,
     pan: number,
+    brightness: number,
+    pulseRate: number,
     forceArticulation: boolean,
     struckPreviewDurationSeconds?: number,
   ): void {
@@ -355,8 +386,15 @@ export class AudioEngine {
       this.context.currentTime,
       TIMBRE_CROSSFADE_SECONDS,
     );
+    const boundedBrightness = Math.min(2.5, Math.max(0.35, brightness));
     voice.filter.frequency.setTargetAtTime(
-      instrumentFilterFrequency(definition, frequency),
+      Math.min(
+        12_000,
+        Math.max(
+          80,
+          instrumentFilterFrequency(definition, frequency) * boundedBrightness,
+        ),
+      ),
       this.context.currentTime,
       TIMBRE_CROSSFADE_SECONDS,
     );
@@ -376,8 +414,21 @@ export class AudioEngine {
       TIMBRE_CROSSFADE_SECONDS,
     );
     voice.currentFrequency = frequency;
+    const compensatedGain = gain * definition.gainCompensation;
+    const boundedPulseRate = Math.min(8, Math.max(0, pulseRate));
+    const pulsing = boundedPulseRate > 0;
     voice.gain.gain.setTargetAtTime(
-      gain * definition.gainCompensation,
+      compensatedGain * (pulsing ? 0.6 : 1),
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.pulseOscillator.frequency.setTargetAtTime(
+      pulsing ? Math.max(0.75, boundedPulseRate) : 0.75,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.pulseDepth.gain.setTargetAtTime(
+      pulsing ? compensatedGain * 0.4 : 0,
       this.context.currentTime,
       TIMBRE_CROSSFADE_SECONDS,
     );
@@ -526,6 +577,8 @@ export class AudioEngine {
     for (const voice of this.voices.values()) {
       voice.gain.gain.cancelScheduledValues(now);
       voice.gain.gain.setTargetAtTime(0, now, 0.012);
+      voice.pulseDepth.gain.cancelScheduledValues(now);
+      voice.pulseDepth.gain.setTargetAtTime(0, now, 0.012);
     }
   }
 
@@ -544,6 +597,8 @@ export class AudioEngine {
       voice.textureFilter.frequency.cancelScheduledValues(now);
       voice.textureFilter.Q.cancelScheduledValues(now);
       voice.textureGain.gain.cancelScheduledValues(now);
+      voice.pulseOscillator.frequency.cancelScheduledValues(now);
+      voice.pulseDepth.gain.cancelScheduledValues(now);
       voice.filter.frequency.cancelScheduledValues(now);
       voice.filter.Q.cancelScheduledValues(now);
       voice.articulation.gain.cancelScheduledValues(now);
@@ -582,6 +637,8 @@ export class AudioEngine {
         voice.modulator.disconnect();
         voice.secondaryOscillator.stop();
         voice.secondaryOscillator.disconnect();
+        voice.pulseOscillator.stop();
+        voice.pulseOscillator.disconnect();
       } catch {
         // An already-stopped oscillator requires no further cleanup.
       }
