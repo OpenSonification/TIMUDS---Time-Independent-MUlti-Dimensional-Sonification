@@ -1,74 +1,166 @@
-# Accessibility test plan and limitations
+# Accessibility approach, testing and limitations
 
-TIMUDS is designed to target WCAG 2.2 Level AA. This is not a conformance claim. Automated tests cover only detectable rules in representative states and cannot replace evaluation by disabled users or manual assistive-technology review.
+Latest review: 23 July 2026
 
-## Implemented approach
+TIMUDS targets applicable WCAG 2.2 Level A and AA success criteria. This is a design target, not a conformance claim. Automated tests, code review and one browser engine cannot replace an expert audit or testing by disabled people.
 
-- English (UK) document language, descriptive metadata, skip link and header/main/navigation/complementary/footer landmarks.
-- Logical headings, native controls, visible labels, fieldsets/legends and concise descriptions.
-- A focused error summary linked to preserved input, with line/item-specific validation where possible.
-- Button parity for shortcuts and pointer drawing alternatives through text and file import.
-- Visible focus, large targets, responsive one-column reflow and no disabled zoom.
-- Light/dark colour schemes, forced-colour treatment and reduced-motion handling.
-- No autoplay; deliberate activation, safe initial master gain, smoothing, prominent Stop sound and Escape stop.
-- Non-colour plot markers, distinguishable timbres without relying solely on panning, and optional centred voices.
-- SVG title/description plus adjacent curve, coordinate, progress, note, frequency and state text.
-- Polite announcements for discrete actions and manual steps. High-frequency coordinate announcements are intentionally absent; periodic progress announcements default off.
-- Web Audio failure leaves authoring, SVG and numeric inspection available.
+TIMUDS is exploratory research software. It has not been validated as assistive technology, clinical equipment, perceptual measurement or scientific instrumentation.
 
-## Manual keyboard and zoom checklist
+Detailed evidence:
 
-1. At first load, use Tab from the browser chrome. Confirm the skip link appears and moves focus to the workspace.
-2. Traverse every interactive element forwards and backwards. Confirm visible focus, logical order and no trap.
-3. From the plot, use Space, arrows, Shift+arrows, Home, End and Escape. Confirm editable fields keep their native keys.
-4. Complete preset selection, CSV paste, file selection, mapping changes, Play/Hold/Stop and manual steps without a pointer.
-5. Submit malformed and empty imports. Confirm the focused error summary is understandable and the original input remains editable.
-6. At browser zoom 200% and 400%, and at a 320 CSS-pixel viewport, confirm single-column reflow without page-level horizontal scrolling.
-7. Use 200% text-only scaling where available. Confirm labels, buttons and readouts do not clip.
-8. Enable operating-system forced colours/high contrast. Confirm start and current markers, curve, focus and state remain distinguishable.
-9. Enable reduced motion. Confirm there is no decorative motion; user-requested traversal remains controllable.
-10. Use touch emulation or a touch device. Confirm controls have separation and drawing does not scroll the page while active.
+- [Accessibility audit](accessibility-audit.md)
+- [WCAG 2.2 A/AA matrix](wcag-2.2-aa-matrix.md)
+- [Screen-reader test plan](screen-reader-test-plan.md)
 
-## Screen-reader checklist
+## Current implementation
 
-Test at least NVDA + Firefox/Chrome on Windows and VoiceOver + Safari on macOS/iOS where available.
+- One main landmark, concise header, footer, stable page navigation and skip links to main, traversal and current position.
+- Logical headings and native buttons, ranges, numbers, selects, text area, file input, checkboxes, disclosures, definition lists and source-point table.
+- Silent initial state. Enable audio prepares the graph without sounding it. Play, Hear and calibration are deliberate sound actions.
+- Persistent Stop all sound, low initial master gain, voice gains, mute, solo, mono-friendly centring and smooth fades.
+- A complete visible current-position definition list available without audio or the SVG.
+- A native Position along curve range plus named start, back, forward and end actions.
+- A dedicated focused two-dimensional controller with native x/y ranges and number inputs.
+- Optional WASD, off by default and active only on the focused controller.
+- Point-by-point curve editing, deletion and reordering without drawing or dragging.
+- Focused import-error summary linked to preserved invalid input with line or item information where possible.
+- One polite live status for discrete messages. Timed announcements are off by default. Rapid explorer messages replace a pending message after a short idle period.
+- Light and dark schemes, reduced-motion handling, forced-colour rules and narrow single-column reflow.
+- A concise SVG description with detailed data available outside the image.
 
-1. Navigate by landmarks and headings; confirm each region’s purpose.
-2. Load every preset and understand summary changes without entering the SVG.
-3. Review the plot accessible name/description; confirm it stays concise.
-4. Operate Play, Hold, Stop, Reset and manual movement. Confirm announcements are discrete and do not overwhelm audio.
-5. Enable and disable optional quarter-progress announcements.
-6. Change both axis configurations, including automatic/manual domains, mute, solo and centre voices.
-7. Import valid CSV/JSON and recover from errors; confirm focus moves once and the error is associated with the text area.
-8. Simulate unavailable Web Audio and confirm the explanation and all non-audio operations remain usable.
+## Keyboard instructions
 
-## Manual listening checklist
+### General
 
-Use a low system output first. Headphones are not required.
+Use Tab and Shift+Tab to move through native controls. Enter and Space activate controls according to browser conventions. The first Tab reveals skip links.
 
-1. Confirm no sound occurs at load, after refresh or after importing a curve.
-2. Press Play on the circle. Confirm two simultaneous sustained voices are audible and perceptually distinguishable in centred/mono output.
-3. Follow one 20-second non-looping circle with a stopwatch. Confirm completion is approximately 20 seconds and final position is held.
-4. Confirm X and Y pitches change independently around the circle: their maxima, minima and direction changes occur at different positions.
-5. Press Hold. Confirm movement freezes without a click/pop and both voices sustain indefinitely.
-6. Press Stop sound and Escape in separate runs. Confirm a short clean fade and retained position.
-7. After audio is enabled, use ±1%, ±5%, Home, End and the seek slider. Confirm each new point sustains and transitions smoothly.
-8. Audition low/middle/high and test controls for each axis. Confirm inversion reverses the learnt relationship.
-9. Exercise mute, solo, per-axis gain, safe master volume, panning and centred voices. Listen for clipping or unstable loudness.
-10. Change tabs during playback. Confirm traversal stops and audio fades; return and verify the explanation/status.
-11. Test browser/OS audio interruption and output-device changes where practical.
+No arrow, Home, End, Space or WASD handler is registered across the page. Escape has one safety use while sound is active; it leaves editable and dialog controls alone.
 
-Automated audio mocks only prove lifecycle/control calls. They do not prove sound exists, timbres are distinguishable, loudness is safe or output is distortion-free.
+### Follow the curve
+
+Focus **Position along curve**:
+
+| Key         | Action                                       |
+| ----------- | -------------------------------------------- |
+| Left Arrow  | Decrease curve progress by the selected step |
+| Right Arrow | Increase curve progress by the selected step |
+| Home        | Move to the start                            |
+| End         | Move to the end or closed-curve seam         |
+
+The Move to start, Step backwards, Step forwards and open-curve Move to end buttons provide the same operations.
+
+### Two-dimensional exploration
+
+Activate **Enter two-dimensional exploration**. Focus moves to the plane controller after this deliberate action.
+
+| Key              | Action                                                            |
+| ---------------- | ----------------------------------------------------------------- |
+| Left Arrow       | Decrease numeric x                                                |
+| Right Arrow      | Increase numeric x                                                |
+| Up Arrow         | Increase numeric y                                                |
+| Down Arrow       | Decrease numeric y                                                |
+| Shift plus Arrow | Use the coarse step                                               |
+| Escape           | Fade preview audio, leave the mode and restore the curve position |
+| Tab / Shift+Tab  | Leave the controller normally                                     |
+
+Up always increases numeric y. Inverting Y pitch does not reverse coordinate movement. Leaving the controller makes its keys inactive immediately. The native x/y controls offer the same coordinate changes when a screen reader retains arrow keys in browse or Quick Nav mode. Users are not asked to disable their screen reader.
+
+### Optional WASD
+
+**Enable WASD in the two-dimensional explorer** starts unchecked. When checked, W increases y, A decreases x, S decreases y and D increases x. These characters have no application action outside the focused controller and type normally in editable controls.
+
+### Audio safety
+
+The visible **Stop all sound** button remains available after audio is enabled. Escape fades currently active audio when focus is outside editable fields and dialogs. Changing or hiding the page also fades timed playback.
+
+## Screen-reader and audio coexistence
+
+The explorer provides:
+
+1. Sustained sound.
+2. A configurable short preview after movement.
+3. Sound only when Hear current position is activated.
+
+Moving focus away from the controller fades a sustained explorer preview. Timed traversal retains its own Play, Hold and Stop state. No attempt is made to detect a screen reader.
+
+Announcement detail can be Off, Coordinates only, Coordinates and pitches, or Full position details. Coordinates only is the initial manual-movement setting. Timed playback announcements are initially Off and may be set to 1, 2, 5 or 10 seconds.
+
+The current-position section is static navigable text, not a live region. During playback React publishes it at a controlled rate of about ten times per second while the audio clock remains authoritative. Animation frames are never announced.
+
+## Visual and numeric alternatives
+
+The current-position and curve-summary sections expose:
+
+- mode and transport state;
+- normalised progress and elapsed time;
+- x and y coordinates;
+- notes and frequencies for both axes;
+- active axis domains;
+- direction and closure;
+- whether audio is enabled and sounding;
+- mute and solo state for each voice;
+- point count, coordinate ranges and curve length.
+
+The source-point table exposes individual coordinates and segment information. X/Y text labels, different marker shapes, solid/dashed treatments, timbre differences and state words supplement colour and stereo cues.
+
+## Mono and hearing considerations
+
+The two voices use different synthetic timbres. Panning is optional and never the only distinction. **Centre both voices (mono-friendly)** removes panning. Each axis has gain, mute, solo and test controls. Numeric note/frequency output remains available when the device is muted or a voice cannot be heard.
+
+No automated test can judge safe volume, timbre separation, masking, distortion or comfort. Begin with low system output.
+
+## Motion, zoom and reflow
+
+TIMUDS has no flashing or decorative continuous animation. Reduced-motion mode removes smooth scrolling and transition duration. User-requested traversal remains controllable.
+
+The production Chromium test verifies no page-level horizontal overflow at 320 CSS pixels. The point table may scroll inside its named container. Responsive CSS removes fixed multi-column layouts at narrow widths. Manual 200%, 400%, increased-text-spacing, mobile orientation and operating-system forced-colour tests remain required.
+
+## Automated evidence
+
+Available checks cover:
+
+- 46 pure/component tests, including keyboard navigation, imports, initial silence, names, states, focus restoration and representative axe scans;
+- nine Chromium production-preview flows covering skip links, audio enable/play/hold/stop, native range keys, pointer drawing, independent arrows, inverted pitch direction, Shift stepping, Escape, Tab exit, optional WASD, text entry, import errors, source-point editing and download-independent production semantics;
+- axe in initial, audio-active, holding, error, explorer, point-editor, dark, reduced-motion, forced-colour emulation and narrow states;
+- a 320 CSS-pixel page-overflow assertion;
+- strict TypeScript, ESLint, Prettier and production build checks.
+
+The tested browser engine is Chromium supplied by Playwright. No real screen-reader result is recorded.
+
+## Manual checks not run
+
+- NVDA with Firefox, Chrome or Edge.
+- JAWS with Chrome or Edge.
+- Windows Narrator with Edge.
+- VoiceOver with Safari on macOS and iOS.
+- TalkBack with Chrome on Android.
+- Switch control, voice control and braille displays.
+- Real forced-colour/high-contrast environments.
+- 200% text-only scaling, 400% browser zoom and increased text spacing.
+- Touch and pen hardware, mobile orientation and largest system text.
+- Sustained, short-preview and on-demand audio alongside screen-reader speech.
+- Mono, one-earbud, hearing-device and output-interruption behaviour.
+- Testing by disabled participants.
 
 ## Known limitations
 
-- No formal audit or testing by disabled participants has yet been recorded.
-- Browser/assistive-technology support for SVG descriptions, range inputs, disclosure elements and live regions varies.
-- Sound cannot be made equivalent for all forms of hearing difference. Numeric and visual output is the non-audio alternative, not a claim of equivalent auditory perception.
-- The current coordinate readout updates about ten times per second visually. It is not live-announced during playback.
-- Optional panning may be ineffective or uncomfortable on some hearing devices; timbre and text remain primary separation cues.
-- Freehand drawing requires pointer-like input; full curve creation remains available through keyboard-accessible text/file inputs.
-- Automated colour-contrast checks in DOM test environments do not cover every system colour or rendered SVG state.
-- Basic CSV support excludes quoted fields and locale-specific numeric conventions.
+- Basic CSV parsing does not support quoted fields, locale decimal commas or arbitrary dialects.
+- Imported full configuration files cannot yet restore mapping settings; exported curve coordinates remain inspectable.
+- The SVG drawing mode needs pointer-like path input, although every practical authoring action has a native-control alternative.
+- Very large point tables are paginated but still require sequential review.
+- Screen-reader support for SVG descriptions, native ranges and disclosures varies.
+- Synthetic audio differs across browsers, operating systems and output devices.
+- The site has not received a formal external accessibility audit.
 
-Report accessibility problems through the repository’s **Issues → New issue** page. Include browser, operating system, assistive technology, steps, expected result and actual result; apply an `accessibility` label if the repository provides one.
+## Report a problem
+
+Use the repository’s **Issues → New issue** page. Include:
+
+- browser and operating system;
+- assistive technology and version;
+- input method;
+- exact steps;
+- expected and actual result;
+- whether audio was enabled and which listening mode was selected.
+
+Apply an `accessibility` label if the repository provides one.

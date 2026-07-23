@@ -161,7 +161,6 @@ export const CurvePlot = forwardRef<CurvePlotHandle, CurvePlotProps>(
           className={drawing ? 'curve-plot is-drawing' : 'curve-plot'}
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           role="img"
-          tabIndex={0}
           aria-describedby="plot-instructions"
           onPointerDown={(event) => {
             if (!drawing) return;
@@ -183,6 +182,10 @@ export const CurvePlot = forwardRef<CurvePlotHandle, CurvePlotProps>(
               pointerPoint(event);
               event.currentTarget.releasePointerCapture(event.pointerId);
             }
+          }}
+          onPointerCancel={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
           }}
         >
           <title>Ordered two-dimensional curve</title>

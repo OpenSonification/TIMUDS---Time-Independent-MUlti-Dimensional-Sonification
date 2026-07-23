@@ -42,6 +42,14 @@ Run `npx playwright install chromium` once where the test browser is absent.
 
 Accessibility is a product constraint, not cleanup. Preserve semantic landmarks and headings, native controls, visible labels, error-summary focus, keyboard parity, a prominent stop control, non-audio alternatives, status announcements and reduced-motion/forced-colour behaviour. Do not live-announce animation frames. Do not make sound, colour, stereo, dragging or SVG the only means of understanding or operating a feature.
 
+Durable interaction rules:
+
+- Prefer native controls to custom widgets. No pointer-only core action.
+- Do not add global arrow or WASD shortcuts. WASD remains optional, off by default and focus-scoped to the plane controller.
+- Never start audio automatically. Keep current state available as ordinary text.
+- Do not add high-frequency live-region updates, positive `tabindex` or a page-level `role="application"`.
+- Every new interaction needs keyboard and screen-reader-oriented tests. Accessibility regressions block completion.
+
 Any new primary action needs:
 
 - a visible keyboard-operable control;

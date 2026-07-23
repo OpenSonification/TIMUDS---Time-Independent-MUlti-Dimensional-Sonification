@@ -41,6 +41,10 @@ Looping applies modulo one. A non-looping result clamps at one and enters holdin
 
 Manual movement writes normalised progress directly. Once audio has been deliberately enabled, a manual move sustains its new coordinate and enters holding. Before activation, it remains silent.
 
+`keyboardNavigation.ts` keeps plane-domain expansion, derived step sizes, arrow/WASD mapping, clamping, boundary detection and nearest-source-point selection pure. Buttons, native inputs and the focused plane controller call the same application commands. No document-wide directional handler exists.
+
+Plane exploration stores the curve traversal progress before it starts. Its coordinate is separate from `CurveData`, so movement cannot mutate the curve. The user can explicitly copy the coordinate into the point list or move the saved traversal progress to the nearest source point.
+
 ## Audio graph
 
 One `AudioEngine` owns the lifecycle:
@@ -57,9 +61,11 @@ Stop changes the master target to zero rather than disconnecting live nodes. Pag
 
 ## Presentation and accessibility
 
-The SVG exposes a short title/description, not thousands of points. It combines curve line, square start and outlined current marker, labelled mathematical axes and a written direction caption. Exact curve and live mapping data sit outside the SVG in semantic description lists. Pointer drawing is an enhancement; paste and file import provide keyboard-complete authoring.
+The SVG exposes a short title/description, not thousands of points. It combines curve line, square start and outlined current marker, labelled mathematical axes and a written direction caption. Exact curve and live mapping data sit outside the SVG in semantic definition lists. Pointer drawing is an enhancement.
 
-Important discrete events update one polite live region. Coordinates are deliberately not announced on animation frames. Manual movement is announced, and timed quarter announcements require opt-in. Native elements supply slider, selection, disclosure, file and button semantics.
+`SourcePointEditor` provides a paginated native table and ordinary form controls for add, update, duplicate, delete and reorder operations. `TwoDimensionalExplorer` supplies one narrowly scoped focusable controller plus native x/y alternatives. Neither component owns audio nodes.
+
+Important discrete events update one polite live region. Coordinates are never announced on animation frames. Explorer movement replaces a pending announcement after a short idle period. Timed announcements require an explicit interval. Native elements supply range, number, selection, disclosure, file, table and button semantics.
 
 ## Extension points
 

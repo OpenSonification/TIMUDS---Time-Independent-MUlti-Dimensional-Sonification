@@ -14,12 +14,25 @@ import {
 } from './audio/AudioEngine';
 import { AxisControls } from './components/AxisControls';
 import { CurvePlot, type CurvePlotHandle } from './components/CurvePlot';
+import { SourcePointEditor } from './components/SourcePointEditor';
+import {
+  TwoDimensionalExplorer,
+  type ExplorerListeningMode,
+} from './components/TwoDimensionalExplorer';
 import {
   buildCurveGeometry,
   coordinateDomain,
   interpolateCurve,
   prepareDrawnPath,
 } from './core/geometry';
+import {
+  explorationDomain,
+  explorerSteps,
+  moveExplorerPoint,
+  nearestSourcePointIndex,
+  stepForName,
+  type ExplorerStepName,
+} from './core/keyboardNavigation';
 import {
   MAX_FILE_BYTES,
   MAX_POINTS,
@@ -42,7 +55,9 @@ import type {
 
 const DEFAULT_CURVE = generatePreset('Circle');
 const SMALL_STEP = 0.01;
-const LARGE_STEP = 0.05;
+type AnnouncementDetail =
+  'off' | 'coordinates' | 'coordinates-pitches' | 'full';
+type PlaybackAnnouncementInterval = 'off' | '1' | '2' | '5' | '10';
 
 const DEFAULT_AXES: AxisConfig[] = [
   {
@@ -124,6 +139,7 @@ export function App() {
     initialTransport(audioAvailable),
   );
   const [audioEnabled, setAudioEnabled] = useState(false);
+  const [audioSounding, setAudioSounding] = useState(false);
   const [axes, setAxes] = useState<AxisConfig[]>(DEFAULT_AXES);
   const [useSharedDomain, setUseSharedDomain] = useState(false);
   const [centreVoices, setCentreVoices] = useState(false);
@@ -131,21 +147,40 @@ export function App() {
   const [announcement, setAnnouncement] = useState(
     'Audio is off. Press Play or choose a calibration sound.',
   );
-  const [periodicAnnouncements, setPeriodicAnnouncements] = useState(false);
+  const [announcementDetail, setAnnouncementDetail] =
+    useState<AnnouncementDetail>('coordinates');
+  const [playbackAnnouncementInterval, setPlaybackAnnouncementInterval] =
+    useState<PlaybackAnnouncementInterval>('off');
+  const [followStep, setFollowStep] = useState(SMALL_STEP);
   const [format, setFormat] = useState<CoordinateFormat>('auto');
   const [coordinateText, setCoordinateText] = useState('x,y\n-1,0\n0,1\n1,0');
   const [importError, setImportError] = useState('');
+  const [importErrorTarget, setImportErrorTarget] = useState<
+    'text' | 'file' | 'drawing'
+  >('text');
   const [drawing, setDrawing] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState<Point[]>([]);
+  const [explorerActive, setExplorerActive] = useState(false);
+  const [explorerPoint, setExplorerPoint] = useState<Point>({ x: 1, y: 0 });
+  const [explorerStepName, setExplorerStepName] =
+    useState<ExplorerStepName>('standard');
+  const [customExplorerStep, setCustomExplorerStep] = useState(0.05);
+  const [wasdEnabled, setWasdEnabled] = useState(false);
+  const [explorerListeningMode, setExplorerListeningMode] =
+    useState<ExplorerListeningMode>('short');
+  const [previewDuration, setPreviewDuration] = useState(0.6);
   const plotRef = useRef<CurvePlotHandle>(null);
-  const workspaceRef = useRef<HTMLElement>(null);
   const errorSummaryRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
   const playbackStartTimeRef = useRef(0);
   const playbackStartProgressRef = useRef(0);
   const lastVisualUpdateRef = useRef(0);
-  const lastAnnouncementBandRef = useRef(-1);
+  const lastPlaybackAnnouncementRef = useRef(-1);
   const previewTimerRef = useRef<number | null>(null);
+  const explorerAnnouncementTimerRef = useRef<number | null>(null);
+  const savedTraversalProgressRef = useRef(0);
+  const lastExplorerKeyTimeRef = useRef(0);
+  const lastBoundaryRef = useRef<string | null>(null);
 
   const geometry = useMemo(
     () => buildCurveGeometry(curve.points, closed),
@@ -174,7 +209,7 @@ export function App() {
     const combined = sharedDomain(independent.x, independent.y);
     return { x: combined, y: combined };
   }, [automaticDomains, axes, useSharedDomain]);
-  const currentPoint = useMemo(
+  const curvePoint = useMemo(
     () =>
       interpolateCurve(
         curve.points,
@@ -193,13 +228,28 @@ export function App() {
       transport.progress,
     ],
   );
+  const explorerDomains = useMemo(
+    () => ({
+      x: explorationDomain(activeDomains.x),
+      y: explorationDomain(activeDomains.y),
+    }),
+    [activeDomains],
+  );
+  const explorerStepOptions = useMemo(
+    () => ({
+      x: explorerSteps(explorerDomains.x),
+      y: explorerSteps(explorerDomains.y),
+    }),
+    [explorerDomains],
+  );
+  const displayedPoint = explorerActive ? explorerPoint : curvePoint;
   const currentPitches = useMemo(
     () =>
       Object.fromEntries(
         axes.map((axis) => [
           axis.key,
           mapValueToPitch(
-            currentPoint[axis.key],
+            displayedPoint[axis.key],
             activeDomains[axis.key],
             axis.lowMidi,
             axis.highMidi,
@@ -207,7 +257,7 @@ export function App() {
           ),
         ]),
       ) as Record<AxisKey, ReturnType<typeof mapValueToPitch>>,
-    [activeDomains, axes, currentPoint],
+    [activeDomains, axes, displayedPoint],
   );
   const audioFrame = useMemo<AudioFrame>(
     () => ({
@@ -221,18 +271,18 @@ export function App() {
     }),
     [axes, centreVoices, currentPitches, masterVolume],
   );
+  const nearestPointIndex = useMemo(
+    () => nearestSourcePointIndex(curve.points, displayedPoint),
+    [curve.points, displayedPoint],
+  );
 
   useEffect(() => {
     if (importError) errorSummaryRef.current?.focus();
   }, [importError]);
 
   useEffect(() => {
-    if (
-      audioEnabled &&
-      (transport.status === 'holding' || transport.status === 'playing')
-    )
-      engine.applyFrame(audioFrame);
-  }, [audioEnabled, audioFrame, engine, transport.status]);
+    if (audioEnabled && audioSounding) engine.applyFrame(audioFrame);
+  }, [audioEnabled, audioFrame, audioSounding, engine]);
 
   useEffect(() => {
     if (transport.status !== 'playing') return;
@@ -274,11 +324,17 @@ export function App() {
         lastVisualUpdateRef.current = now;
         dispatch({ type: 'SEEK', progress: result.progress });
       }
-      if (periodicAnnouncements) {
-        const band = Math.floor(result.progress * 4);
-        if (band !== lastAnnouncementBandRef.current && band > 0 && band < 4) {
-          lastAnnouncementBandRef.current = band;
-          setAnnouncement(`Playback is ${band * 25}% complete.`);
+      if (playbackAnnouncementInterval !== 'off') {
+        const interval = Number(playbackAnnouncementInterval);
+        const announcementIndex = Math.floor(result.elapsed / interval);
+        if (
+          announcementIndex !== lastPlaybackAnnouncementRef.current &&
+          announcementIndex > 0
+        ) {
+          lastPlaybackAnnouncementRef.current = announcementIndex;
+          setAnnouncement(
+            `Playback position ${(result.progress * 100).toFixed(0)}%.`,
+          );
         }
       }
       if (result.completed) {
@@ -302,7 +358,7 @@ export function App() {
     loop,
     masterVolume,
     parameterisation,
-    periodicAnnouncements,
+    playbackAnnouncementInterval,
     reverse,
     transport.status,
   ]);
@@ -314,6 +370,7 @@ export function App() {
         (transport.status === 'playing' || transport.status === 'holding')
       ) {
         engine.fadeOut();
+        setAudioSounding(false);
         dispatch({ type: 'STOP' });
         setAnnouncement(
           'The page was hidden, so playback stopped at the current point.',
@@ -325,14 +382,101 @@ export function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
   }, [engine, transport.status]);
 
+  useEffect(() => {
+    function handleSafetyEscape(event: globalThis.KeyboardEvent): void {
+      if (!audioSounding || event.defaultPrevented || event.key !== 'Escape')
+        return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (
+        target.closest('dialog') ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) ||
+        target.isContentEditable
+      )
+        return;
+      if (previewTimerRef.current !== null) {
+        window.clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
+      engine.fadeOut();
+      setAudioSounding(false);
+      dispatch({ type: 'SEEK', progress: progressRef.current });
+      dispatch({ type: 'STOP' });
+      setAnnouncement('Escape stopped all sound at the current position.');
+    }
+    document.addEventListener('keydown', handleSafetyEscape);
+    return () => document.removeEventListener('keydown', handleSafetyEscape);
+  }, [audioSounding, engine]);
+
   useEffect(
     () => () => {
       if (previewTimerRef.current !== null)
         window.clearTimeout(previewTimerRef.current);
+      if (explorerAnnouncementTimerRef.current !== null)
+        window.clearTimeout(explorerAnnouncementTimerRef.current);
       void engine.close();
     },
     [engine],
   );
+
+  function frameForPoint(point: Point, frameAxes = axes): AudioFrame {
+    const frequencies = Object.fromEntries(
+      frameAxes.map((axis) => [
+        axis.key,
+        mapValueToPitch(
+          point[axis.key],
+          activeDomains[axis.key],
+          axis.lowMidi,
+          axis.highMidi,
+          axis.inverted,
+        ).frequency,
+      ]),
+    ) as Record<AxisKey, number>;
+    return { frequencies, axes: frameAxes, masterVolume, centreVoices };
+  }
+
+  function positionAnnouncement(
+    point: Point,
+    progress: number | null,
+    prefix = 'Position',
+  ): string {
+    if (announcementDetail === 'off') return '';
+    const base = `${prefix}. X ${formatNumber(point.x)}, Y ${formatNumber(point.y)}.`;
+    if (announcementDetail === 'coordinates') return base;
+    const pitches = Object.fromEntries(
+      axes.map((axis) => [
+        axis.key,
+        mapValueToPitch(
+          point[axis.key],
+          activeDomains[axis.key],
+          axis.lowMidi,
+          axis.highMidi,
+          axis.inverted,
+        ),
+      ]),
+    ) as Record<AxisKey, ReturnType<typeof mapValueToPitch>>;
+    const withPitches = `${base} X ${pitches.x.noteName}, ${pitches.x.frequency.toFixed(1)} hertz. Y ${pitches.y.noteName}, ${pitches.y.frequency.toFixed(1)} hertz.`;
+    if (announcementDetail === 'coordinates-pitches' || progress === null)
+      return withPitches;
+    return `${withPitches} Curve progress ${(progress * 100).toFixed(1)}%. ${reverse ? 'Reverse' : 'Forward'} traversal.`;
+  }
+
+  function queueExplorerAnnouncement(point: Point): void {
+    if (explorerAnnouncementTimerRef.current !== null)
+      window.clearTimeout(explorerAnnouncementTimerRef.current);
+    if (announcementDetail === 'off') return;
+    explorerAnnouncementTimerRef.current = window.setTimeout(() => {
+      const message = positionAnnouncement(point, null, 'Explorer position');
+      if (message) setAnnouncement(message);
+    }, 250);
+  }
+
+  function clearPreviewTimer(): void {
+    if (previewTimerRef.current !== null) {
+      window.clearTimeout(previewTimerRef.current);
+      previewTimerRef.current = null;
+    }
+  }
 
   function setProgress(next: number, announce = false): void {
     const progress = clampProgress(next);
@@ -348,46 +492,73 @@ export function App() {
     );
     plotRef.current?.setCurrentPoint(point);
     if (audioEnabled) {
-      const frequencies = Object.fromEntries(
-        axes.map((axis) => [
-          axis.key,
-          mapValueToPitch(
-            point[axis.key],
-            activeDomains[axis.key],
-            axis.lowMidi,
-            axis.highMidi,
-            axis.inverted,
-          ).frequency,
-        ]),
-      ) as Record<AxisKey, number>;
-      engine.startSound({ frequencies, axes, masterVolume, centreVoices });
+      clearPreviewTimer();
+      engine.startSound(frameForPoint(point));
+      setAudioSounding(true);
       dispatch({ type: 'HOLD' });
     }
-    if (announce)
+    if (announce) {
+      const message = positionAnnouncement(point, progress, 'Curve position');
+      if (message) setAnnouncement(message);
+    }
+  }
+
+  function seekCommand(next: number, announce = false): void {
+    if (transport.status === 'playing') hold();
+    setProgress(next, announce);
+  }
+
+  async function enableAudio(): Promise<boolean> {
+    if (!audioAvailable) return false;
+    try {
+      await engine.enable();
+      setAudioEnabled(true);
       setAnnouncement(
-        `Moved to ${(progress * 100).toFixed(1)}%. X ${formatNumber(point.x)}, Y ${formatNumber(point.y)}.`,
+        'Audio enabled. No sound is playing. Use Play, Hear current position or a test button.',
       );
+      return true;
+    } catch {
+      engine.fadeOut();
+      setAudioSounding(false);
+      dispatch({ type: 'ERROR' });
+      setAnnouncement(
+        'Audio failed to start. The curve and text readout remain available.',
+      );
+      return false;
+    }
   }
 
   async function play(): Promise<void> {
     if (!audioAvailable) return;
     try {
-      if (previewTimerRef.current !== null) {
-        window.clearTimeout(previewTimerRef.current);
-        previewTimerRef.current = null;
-      }
+      clearPreviewTimer();
       await engine.enable();
       setAudioEnabled(true);
+      if (explorerActive) {
+        setExplorerActive(false);
+        plotRef.current?.setCurrentPoint(curvePoint);
+      }
       const start = progressRef.current >= 1 ? 0 : progressRef.current;
       if (start !== progressRef.current) setProgress(0);
+      const startPoint = interpolateCurve(
+        curve.points,
+        start,
+        closed,
+        parameterisation,
+        reverse,
+        geometry,
+      );
       playbackStartProgressRef.current = start;
       playbackStartTimeRef.current = engine.currentTime;
-      lastAnnouncementBandRef.current = Math.floor(start * 4);
-      engine.startSound(audioFrame);
+      lastPlaybackAnnouncementRef.current = 0;
+      plotRef.current?.setCurrentPoint(startPoint);
+      engine.startSound(frameForPoint(startPoint));
+      setAudioSounding(true);
       dispatch({ type: 'PLAY' });
       setAnnouncement('Playing the X and Y voices.');
     } catch {
       engine.fadeOut();
+      setAudioSounding(false);
       dispatch({ type: 'ERROR' });
       setAnnouncement(
         'Audio failed to start. The curve and readout are still available.',
@@ -403,7 +574,9 @@ export function App() {
   }
 
   function stopSound(message = 'Sound stopped at the current point.'): void {
+    clearPreviewTimer();
     engine.fadeOut();
+    setAudioSounding(false);
     dispatch({ type: 'SEEK', progress: progressRef.current });
     dispatch({ type: 'STOP' });
     setAnnouncement(message);
@@ -411,6 +584,7 @@ export function App() {
 
   function resetToStart(): void {
     engine.fadeOut();
+    setAudioSounding(false);
     progressRef.current = 0;
     dispatch({ type: 'RESET' });
     plotRef.current?.setCurrentPoint(
@@ -428,6 +602,8 @@ export function App() {
 
   function applyCurve(next: CurveData): void {
     engine.fadeOut();
+    setAudioSounding(false);
+    setExplorerActive(false);
     setCurve(next);
     setOriginalCurve(next);
     setClosed(next.closed);
@@ -435,8 +611,11 @@ export function App() {
     progressRef.current = 0;
     dispatch({ type: 'RESET' });
     setImportError('');
+    setImportErrorTarget('text');
+    const xDomain = coordinateDomain(next.points, 'x');
+    const yDomain = coordinateDomain(next.points, 'y');
     setAnnouncement(
-      `${next.name} loaded: ${next.points.length.toLocaleString('en-GB')} points. Audio is off.`,
+      `${next.name} loaded. ${next.points.length.toLocaleString('en-GB')} points. X range ${formatNumber(xDomain.minimum)} to ${formatNumber(xDomain.maximum)}. Y range ${formatNumber(yDomain.minimum)} to ${formatNumber(yDomain.maximum)}. ${next.closed ? 'Closed curve.' : 'Open curve.'} Audio is off.`,
     );
   }
 
@@ -459,6 +638,7 @@ export function App() {
           ? error.message
           : 'The coordinate data could not be imported.';
       setImportError(message);
+      setImportErrorTarget('text');
       setAnnouncement(`Import error: ${message}`);
     }
   }
@@ -483,6 +663,7 @@ export function App() {
       const message =
         error instanceof Error ? error.message : 'The file could not be read.';
       setImportError(message);
+      setImportErrorTarget('file');
       setAnnouncement(`Import error: ${message}`);
     } finally {
       event.currentTarget.value = '';
@@ -495,6 +676,7 @@ export function App() {
       setImportError(
         'Draw at least two distinct points before finishing the curve.',
       );
+      setImportErrorTarget('drawing');
       setAnnouncement('Drawing needs at least two distinct points.');
       return;
     }
@@ -522,8 +704,7 @@ export function App() {
     try {
       await engine.enable();
       setAudioEnabled(true);
-      if (previewTimerRef.current !== null)
-        window.clearTimeout(previewTimerRef.current);
+      clearPreviewTimer();
       const frequencies = Object.fromEntries(
         axes.map((axis) => {
           const domain = activeDomains[axis.key];
@@ -552,18 +733,241 @@ export function App() {
         masterVolume,
         centreVoices,
       });
+      setAudioSounding(true);
       dispatch({ type: 'STOP' });
       setAnnouncement(
         `${key === 'both' ? 'Both voices' : `${key.toUpperCase()} voice`} playing for calibration.`,
       );
       previewTimerRef.current = window.setTimeout(() => {
         engine.fadeOut();
+        setAudioSounding(false);
         setAnnouncement('Calibration sound finished.');
       }, 900);
     } catch {
+      setAudioSounding(false);
       dispatch({ type: 'ERROR' });
       setAnnouncement('The calibration sound could not be started.');
     }
+  }
+
+  async function soundExplorerPoint(point: Point, requested = false) {
+    if (!audioAvailable) return;
+    if (!requested && !audioEnabled) return;
+    if (!requested && explorerListeningMode === 'on-demand') {
+      engine.fadeOut();
+      setAudioSounding(false);
+      return;
+    }
+    try {
+      if (requested) {
+        await engine.enable();
+        setAudioEnabled(true);
+      }
+      clearPreviewTimer();
+      engine.startSound(frameForPoint(point));
+      setAudioSounding(true);
+      dispatch({ type: 'STOP' });
+      if (explorerListeningMode !== 'sustained') {
+        previewTimerRef.current = window.setTimeout(() => {
+          engine.fadeOut();
+          setAudioSounding(false);
+        }, previewDuration * 1000);
+      }
+    } catch {
+      setAudioSounding(false);
+      dispatch({ type: 'ERROR' });
+      setAnnouncement('The explorer sound could not be started.');
+    }
+  }
+
+  function changeExplorerCoordinate(axis: AxisKey, value: number): void {
+    const domain = explorerDomains[axis];
+    const bounded = Math.min(domain.maximum, Math.max(domain.minimum, value));
+    const next = { ...explorerPoint, [axis]: bounded };
+    setExplorerPoint(next);
+    plotRef.current?.setCurrentPoint(next);
+    queueExplorerAnnouncement(next);
+    void soundExplorerPoint(next);
+  }
+
+  function enterExplorer(): void {
+    savedTraversalProgressRef.current = progressRef.current;
+    clearPreviewTimer();
+    engine.fadeOut();
+    setAudioSounding(false);
+    if (transport.status === 'playing' || transport.status === 'holding')
+      dispatch({ type: 'STOP' });
+    setExplorerPoint(curvePoint);
+    setExplorerActive(true);
+    plotRef.current?.setCurrentPoint(curvePoint);
+    setAnnouncement(
+      'Keyboard exploration started. Arrow keys change x and y. The curve will not change. Press Escape to return.',
+    );
+  }
+
+  function exitExplorer(): void {
+    clearPreviewTimer();
+    engine.fadeOut();
+    setAudioSounding(false);
+    setExplorerActive(false);
+    const restored = interpolateCurve(
+      curve.points,
+      savedTraversalProgressRef.current,
+      closed,
+      parameterisation,
+      reverse,
+      geometry,
+    );
+    plotRef.current?.setCurrentPoint(restored);
+    setAnnouncement(
+      'Keyboard exploration ended. The saved curve position was restored.',
+    );
+  }
+
+  function explorerControllerKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ): void {
+    const standardSteps = {
+      x: stepForName(explorerStepName, explorerDomains.x, customExplorerStep),
+      y: stepForName(explorerStepName, explorerDomains.y, customExplorerStep),
+    };
+    const coarseSteps = {
+      x: explorerStepOptions.x.coarse,
+      y: explorerStepOptions.y.coarse,
+    };
+    const movement = moveExplorerPoint(
+      explorerPoint,
+      event.key,
+      explorerDomains,
+      standardSteps,
+      coarseSteps,
+      event.shiftKey,
+      wasdEnabled,
+    );
+    if (!movement.handled) return;
+    event.preventDefault();
+    const now = performance.now();
+    if (event.repeat && now - lastExplorerKeyTimeRef.current < 50) return;
+    lastExplorerKeyTimeRef.current = now;
+    if (movement.boundary) {
+      if (lastBoundaryRef.current !== movement.boundary) {
+        lastBoundaryRef.current = movement.boundary;
+        const axis = movement.boundary.startsWith('x') ? 'X' : 'Y';
+        const edge = movement.boundary.endsWith('minimum')
+          ? 'Minimum'
+          : 'Maximum';
+        setAnnouncement(`${edge} ${axis} boundary reached.`);
+      }
+      return;
+    }
+    lastBoundaryRef.current = null;
+    setExplorerPoint(movement.point);
+    plotRef.current?.setCurrentPoint(movement.point);
+    queueExplorerAnnouncement(movement.point);
+    void soundExplorerPoint(movement.point);
+  }
+
+  function explorerControllerBlur(): void {
+    if (audioSounding) {
+      clearPreviewTimer();
+      engine.fadeOut();
+      setAudioSounding(false);
+    }
+  }
+
+  function progressForSourcePoint(index: number): number {
+    const bounded = Math.min(Math.max(0, index), curve.points.length - 1);
+    let forwardProgress = 0;
+    if (parameterisation === 'uniform') {
+      const segments = closed
+        ? curve.points.length
+        : Math.max(1, curve.points.length - 1);
+      forwardProgress = bounded / segments;
+    } else if (geometry.totalLength > 0) {
+      forwardProgress =
+        (geometry.segments[bounded]?.cumulativeStart ?? geometry.totalLength) /
+        geometry.totalLength;
+    }
+    return reverse ? 1 - forwardProgress : forwardProgress;
+  }
+
+  function moveToSourcePoint(index: number): void {
+    const next = progressForSourcePoint(index);
+    if (explorerActive) {
+      savedTraversalProgressRef.current = next;
+      progressRef.current = next;
+      dispatch({ type: 'SEEK', progress: next });
+      setAnnouncement(
+        `Curve traversal moved to source point ${index + 1}. The explorer coordinate is unchanged.`,
+      );
+      return;
+    }
+    seekCommand(next, true);
+  }
+
+  function moveTraversalToNearest(): void {
+    const index = nearestSourcePointIndex(curve.points, explorerPoint);
+    const next = progressForSourcePoint(index);
+    savedTraversalProgressRef.current = next;
+    progressRef.current = next;
+    dispatch({ type: 'SEEK', progress: next });
+    setAnnouncement(
+      `Curve traversal moved to nearest source point, point ${index + 1}. Explorer coordinate is unchanged.`,
+    );
+  }
+
+  function replaceCurvePoints(points: Point[], message: string): void {
+    if (points.length < 2 || points.length > MAX_POINTS) return;
+    clearPreviewTimer();
+    engine.fadeOut();
+    setAudioSounding(false);
+    setCurve((current) => ({ ...current, source: 'editor', points }));
+    progressRef.current = 0;
+    dispatch({ type: 'RESET' });
+    plotRef.current?.setCurrentPoint(points[0] ?? { x: 0, y: 0 });
+    setAnnouncement(`${message} Traversal reset to the first point.`);
+  }
+
+  function addExplorerPointToCurve(): void {
+    replaceCurvePoints(
+      [...curve.points, explorerPoint],
+      `Explorer coordinate X ${formatNumber(explorerPoint.x)}, Y ${formatNumber(explorerPoint.y)} added as point ${curve.points.length + 1}.`,
+    );
+  }
+
+  function resetApplication(): void {
+    clearPreviewTimer();
+    engine.fadeOut();
+    setAudioSounding(false);
+    setCurve(DEFAULT_CURVE);
+    setOriginalCurve(DEFAULT_CURVE);
+    setSelectedPreset('Circle');
+    setClosed(DEFAULT_CURVE.closed);
+    setReverse(false);
+    setEqualScale(true);
+    setParameterisation('arc-length');
+    setDuration(20);
+    setLoop(false);
+    setAxes(DEFAULT_AXES);
+    setUseSharedDomain(false);
+    setCentreVoices(false);
+    setMasterVolume(0.18);
+    setAnnouncementDetail('coordinates');
+    setPlaybackAnnouncementInterval('off');
+    setFollowStep(SMALL_STEP);
+    setExplorerActive(false);
+    setWasdEnabled(false);
+    setExplorerListeningMode('short');
+    progressRef.current = 0;
+    dispatch({ type: 'RESET' });
+    setImportError('');
+    setImportErrorTarget('text');
+    setDrawing(false);
+    setDrawingPoints([]);
+    plotRef.current?.setCurrentPoint(DEFAULT_CURVE.points[0] ?? { x: 0, y: 0 });
+    setAnnouncement(
+      'Application reset. The default circle is loaded and audio is off.',
+    );
   }
 
   function downloadConfiguration(): void {
@@ -592,53 +996,28 @@ export function App() {
     setAnnouncement('Curve and mapping configuration downloaded as JSON.');
   }
 
-  function workspaceKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      stopSound('Escape stopped the sound at the current point.');
-      return;
-    }
-    const target = event.target as HTMLElement;
-    if (
-      ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(target.tagName) ||
-      target.isContentEditable
-    )
-      return;
-    if (event.key === ' ') {
-      event.preventDefault();
-      if (transport.status === 'playing') hold();
-      else void play();
-    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      event.preventDefault();
-      const direction = event.key === 'ArrowLeft' ? -1 : 1;
-      setProgress(
-        progressRef.current +
-          direction * (event.shiftKey ? LARGE_STEP : SMALL_STEP),
-        true,
-      );
-    } else if (event.key === 'Home') {
-      event.preventDefault();
-      setProgress(0, true);
-    } else if (event.key === 'End') {
-      event.preventDefault();
-      setProgress(1, true);
-    }
-  }
-
   const stateLabel: Record<TransportState['status'], string> = {
     silent: 'Silent. Audio has not started.',
     playing: 'Playing',
     holding: 'Holding at current point',
-    stopped: 'Stopped. Audio off.',
+    stopped: 'Stopped',
     unavailable: 'Audio unavailable',
     error: 'Audio error',
   };
 
   return (
     <>
-      <a className="skip-link" href="#main-content">
-        Skip to the TIMUDS workspace
-      </a>
+      <nav className="skip-links" aria-label="Skip links">
+        <a className="skip-link" href="#main-content">
+          Skip to the TIMUDS workspace
+        </a>
+        <a className="skip-link" href="#transport">
+          Skip to traversal controls
+        </a>
+        <a className="skip-link" href="#current-position">
+          Skip to current position
+        </a>
+      </nav>
       <header className="site-header">
         <div className="header-inner">
           <a className="brand" href="#top" aria-label="TIMUDS home">
@@ -657,12 +1036,13 @@ export function App() {
             <a href="#curve-source">Curve</a>
             <a href="#axis-mapping">Mapping</a>
             <a href="#transport">Traversal</a>
+            <a href="#keyboard-explorer">Explorer</a>
             <a href="#accessibility">Access</a>
           </nav>
         </div>
       </header>
 
-      <main id="main-content">
+      <main id="main-content" tabIndex={-1}>
         <section className="hero" id="top" aria-labelledby="page-title">
           <div className="hero-grid">
             <div className="hero-intro">
@@ -684,8 +1064,8 @@ export function App() {
                   i
                 </span>
                 <p>
-                  Sound starts when you press Play or a calibration button.
-                  TIMUDS is an experimental prototype.
+                  Sound starts when you press Play, Hear current position or a
+                  calibration button. TIMUDS is an experimental prototype.
                 </p>
               </div>
             </div>
@@ -749,12 +1129,7 @@ export function App() {
           </div>
         </section>
 
-        <section
-          className="workspace"
-          ref={workspaceRef}
-          aria-labelledby="workspace-title"
-          onKeyDown={workspaceKeyDown}
-        >
+        <section className="workspace" aria-labelledby="workspace-title">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Instrument panel</p>
@@ -766,7 +1141,7 @@ export function App() {
               onClick={() => stopSound()}
               disabled={!audioEnabled}
             >
-              <span aria-hidden="true">■</span> Stop sound
+              <span aria-hidden="true">■</span> Stop all sound
             </button>
           </div>
           {!audioAvailable && (
@@ -775,7 +1150,7 @@ export function App() {
               and inspect curves.
             </div>
           )}
-          <p className="sr-only" aria-live="polite" aria-atomic="true">
+          <p className="sr-only" role="status" aria-atomic="true">
             {announcement}
           </p>
 
@@ -784,7 +1159,7 @@ export function App() {
               <CurvePlot
                 ref={plotRef}
                 points={curve.points}
-                currentPoint={currentPoint}
+                currentPoint={displayedPoint}
                 closed={closed}
                 reverse={reverse}
                 equalScale={equalScale}
@@ -823,12 +1198,23 @@ export function App() {
               </div>
             </div>
 
-            <aside className="live-readout" aria-labelledby="readout-title">
+            <aside
+              id="current-position"
+              className="live-readout"
+              aria-labelledby="readout-title"
+              tabIndex={-1}
+            >
               <p className="readout-kicker">Live mapping</p>
               <h3 id="readout-title">Current position</h3>
               <dl>
                 <div>
-                  <dt>Audio state</dt>
+                  <dt>Mode</dt>
+                  <dd>
+                    {explorerActive ? 'Exploring plane' : 'Following curve'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Transport state</dt>
                   <dd>{stateLabel[transport.status]}</dd>
                 </div>
                 <div>
@@ -842,26 +1228,88 @@ export function App() {
                     {duration.toFixed(0)} s
                   </dd>
                 </div>
-                <div className="coordinate-x">
-                  <dt>X value</dt>
-                  <dd>{formatNumber(currentPoint.x)}</dd>
+                <div>
+                  <dt>Source point</dt>
+                  <dd>
+                    Nearest point {nearestPointIndex + 1} of{' '}
+                    {curve.points.length}
+                  </dd>
                 </div>
                 <div className="coordinate-x">
-                  <dt>X pitch</dt>
-                  <dd>
-                    {currentPitches.x.noteName},{' '}
-                    {currentPitches.x.frequency.toFixed(1)} Hz
-                  </dd>
+                  <dt>X value</dt>
+                  <dd>{formatNumber(displayedPoint.x)}</dd>
+                </div>
+                <div className="coordinate-x">
+                  <dt>X note</dt>
+                  <dd>{currentPitches.x.noteName}</dd>
+                </div>
+                <div className="coordinate-x">
+                  <dt>X frequency</dt>
+                  <dd>{currentPitches.x.frequency.toFixed(1)} Hz</dd>
                 </div>
                 <div className="coordinate-y">
                   <dt>Y value</dt>
-                  <dd>{formatNumber(currentPoint.y)}</dd>
+                  <dd>{formatNumber(displayedPoint.y)}</dd>
                 </div>
                 <div className="coordinate-y">
-                  <dt>Y pitch</dt>
+                  <dt>Y note</dt>
+                  <dd>{currentPitches.y.noteName}</dd>
+                </div>
+                <div className="coordinate-y">
+                  <dt>Y frequency</dt>
+                  <dd>{currentPitches.y.frequency.toFixed(1)} Hz</dd>
+                </div>
+                <div>
+                  <dt>X domain</dt>
                   <dd>
-                    {currentPitches.y.noteName},{' '}
-                    {currentPitches.y.frequency.toFixed(1)} Hz
+                    {formatNumber(activeDomains.x.minimum)} to{' '}
+                    {formatNumber(activeDomains.x.maximum)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Y domain</dt>
+                  <dd>
+                    {formatNumber(activeDomains.y.minimum)} to{' '}
+                    {formatNumber(activeDomains.y.maximum)}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Direction</dt>
+                  <dd>{reverse ? 'Reverse' : 'Forward'}</dd>
+                </div>
+                <div>
+                  <dt>Curve</dt>
+                  <dd>{closed ? 'Closed' : 'Open'}</dd>
+                </div>
+                <div>
+                  <dt>Audio sounding</dt>
+                  <dd>{audioSounding ? 'Yes' : 'No'}</dd>
+                </div>
+                <div>
+                  <dt>Audio enabled</dt>
+                  <dd>
+                    {!audioAvailable
+                      ? 'Unavailable'
+                      : audioEnabled
+                        ? 'Yes'
+                        : 'No'}
+                  </dd>
+                </div>
+                {axes.map((axis) => (
+                  <div key={`${axis.key}-voice-state`}>
+                    <dt>{axis.key.toUpperCase()} voice state</dt>
+                    <dd>
+                      {axis.muted ? 'Muted' : 'Not muted'},{' '}
+                      {axis.solo ? 'soloed' : 'not soloed'}
+                    </dd>
+                  </div>
+                ))}
+                <div>
+                  <dt>Traversal position</dt>
+                  <dd>
+                    {explorerActive
+                      ? 'Saved while plane exploration is active'
+                      : 'Current curve position'}
                   </dd>
                 </div>
               </dl>
@@ -876,6 +1324,7 @@ export function App() {
             id="transport"
             className="panel transport-panel"
             aria-labelledby="transport-title"
+            tabIndex={-1}
           >
             <div className="panel-heading">
               <div>
@@ -889,11 +1338,18 @@ export function App() {
             <div className="transport-primary button-row">
               <button
                 type="button"
+                onClick={() => void enableAudio()}
+                disabled={!audioAvailable || audioEnabled}
+              >
+                Enable audio
+              </button>
+              <button
+                type="button"
                 className="button-primary"
                 onClick={() => void play()}
                 disabled={!audioAvailable || transport.status === 'playing'}
               >
-                ▶{' '}
+                <span aria-hidden="true">▶ </span>
                 {transport.progress > 0 && transport.progress < 1
                   ? 'Resume'
                   : 'Play'}
@@ -903,85 +1359,101 @@ export function App() {
                 onClick={hold}
                 disabled={transport.status !== 'playing'}
               >
-                Ⅱ Hold
+                <span aria-hidden="true">Ⅱ </span>Hold
               </button>
               <button
                 type="button"
                 onClick={() => stopSound()}
                 disabled={!audioEnabled}
               >
-                ■ Stop sound
+                <span aria-hidden="true">■ </span>Stop all sound
               </button>
               <button type="button" onClick={resetToStart}>
-                ↺ Reset to start
+                <span aria-hidden="true">↺ </span>Reset traversal
               </button>
             </div>
+            <p className="fine-print">
+              Audio engine:{' '}
+              {!audioAvailable
+                ? 'unavailable in this browser'
+                : audioEnabled
+                  ? 'enabled'
+                  : 'not enabled'}
+              . Enable audio prepares the synthesiser without making sound.
+            </p>
             <div className="seek-block">
-              <label htmlFor="seek">
-                Curve progress: {(transport.progress * 100).toFixed(1)}%
-              </label>
+              <label htmlFor="seek">Position along curve</label>
+              <output htmlFor="seek">
+                Normalised progress: {transport.progress.toFixed(3)} (
+                {(transport.progress * 100).toFixed(1)}%)
+              </output>
               <input
                 id="seek"
                 type="range"
                 min="0"
                 max="1"
-                step="0.001"
+                step={followStep}
                 value={transport.progress}
+                aria-describedby="follow-curve-help"
                 onChange={(event) =>
-                  setProgress(event.currentTarget.valueAsNumber)
+                  seekCommand(event.currentTarget.valueAsNumber)
                 }
-                onPointerDown={() => transport.status === 'playing' && hold()}
               />
               <div className="range-ends" aria-hidden="true">
                 <span>Start</span>
-                <span>End</span>
+                <span>{closed ? 'Closing seam' : 'End'}</span>
               </div>
+              <p id="follow-curve-help" className="fine-print">
+                Left and Right use the selected step. Home moves to the start.
+                End moves to the end; on a closed curve it reaches the closing
+                seam predictably.
+              </p>
             </div>
             <div className="manual-controls">
-              <p>The manual buttons move by 1% or 5% of the curve.</p>
+              <div className="follow-step-control">
+                <label htmlFor="follow-step">Curve step size</label>
+                <select
+                  id="follow-step"
+                  value={followStep}
+                  onChange={(event) =>
+                    setFollowStep(Number(event.currentTarget.value))
+                  }
+                >
+                  <option value="0.001">0.1%</option>
+                  <option value="0.01">1%</option>
+                  <option value="0.05">5%</option>
+                  <option value="0.1">10%</option>
+                </select>
+              </div>
               <div className="button-row">
-                <button type="button" onClick={() => setProgress(0, true)}>
-                  Home
+                <button type="button" onClick={() => seekCommand(0, true)}>
+                  Move to start
                 </button>
                 <button
                   type="button"
                   onClick={() =>
-                    setProgress(progressRef.current - LARGE_STEP, true)
+                    seekCommand(progressRef.current - followStep, true)
                   }
                 >
-                  −5%
+                  Step backwards
                 </button>
                 <button
                   type="button"
                   onClick={() =>
-                    setProgress(progressRef.current - SMALL_STEP, true)
+                    seekCommand(progressRef.current + followStep, true)
                   }
                 >
-                  −1%
+                  Step forwards
                 </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setProgress(progressRef.current + SMALL_STEP, true)
-                  }
-                >
-                  +1%
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setProgress(progressRef.current + LARGE_STEP, true)
-                  }
-                >
-                  +5%
-                </button>
-                <button type="button" onClick={() => setProgress(1, true)}>
-                  End
-                </button>
+                {!closed && (
+                  <button type="button" onClick={() => seekCommand(1, true)}>
+                    Move to end
+                  </button>
+                )}
               </div>
             </div>
             <details>
-              <summary>Timing and keyboard options</summary>
+              <summary>Timing and announcement options</summary>
               <div className="details-content two-column-fields">
                 <label htmlFor="duration">
                   One traversal duration (seconds)
@@ -1028,17 +1500,41 @@ export function App() {
                   Loop continuously
                 </label>
                 <span />
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={periodicAnnouncements}
-                    onChange={(event) =>
-                      setPeriodicAnnouncements(event.currentTarget.checked)
-                    }
-                  />{' '}
-                  Announce 25% intervals during playback
+                <label htmlFor="announcement-detail">Announcement detail</label>
+                <select
+                  id="announcement-detail"
+                  value={announcementDetail}
+                  onChange={(event) =>
+                    setAnnouncementDetail(
+                      event.currentTarget.value as AnnouncementDetail,
+                    )
+                  }
+                >
+                  <option value="off">Off</option>
+                  <option value="coordinates">Coordinates only</option>
+                  <option value="coordinates-pitches">
+                    Coordinates and pitches
+                  </option>
+                  <option value="full">Full position details</option>
+                </select>
+                <label htmlFor="playback-announcement-interval">
+                  Timed playback announcements
                 </label>
-                <span />
+                <select
+                  id="playback-announcement-interval"
+                  value={playbackAnnouncementInterval}
+                  onChange={(event) =>
+                    setPlaybackAnnouncementInterval(
+                      event.currentTarget.value as PlaybackAnnouncementInterval,
+                    )
+                  }
+                >
+                  <option value="off">Off</option>
+                  <option value="1">Every 1 second</option>
+                  <option value="2">Every 2 seconds</option>
+                  <option value="5">Every 5 seconds</option>
+                  <option value="10">Every 10 seconds</option>
+                </select>
               </div>
               <p className="fine-print">
                 Arc length gives constant spatial speed. Uniform segment
@@ -1046,13 +1542,39 @@ export function App() {
                 therefore take longer to pass.
               </p>
               <p className="fine-print">
-                Keys: Space plays or holds. Left and Right move by 1%; hold
-                Shift to move by 5%. Home and End select an endpoint. Escape
-                stops the sound. Form fields keep their normal keyboard
-                behaviour.
+                Playback announcements are off by default. The current-position
+                section remains available as ordinary text. Escape stops active
+                audio unless a form control or dialog has the immediate claim to
+                that key.
               </p>
             </details>
           </section>
+
+          <TwoDimensionalExplorer
+            active={explorerActive}
+            point={explorerPoint}
+            domains={explorerDomains}
+            steps={explorerStepOptions}
+            stepName={explorerStepName}
+            customStep={customExplorerStep}
+            wasdEnabled={wasdEnabled}
+            listeningMode={explorerListeningMode}
+            previewDuration={previewDuration}
+            audioAvailable={audioAvailable}
+            onEnter={enterExplorer}
+            onExit={exitExplorer}
+            onControllerKeyDown={explorerControllerKeyDown}
+            onControllerBlur={explorerControllerBlur}
+            onCoordinateChange={changeExplorerCoordinate}
+            onStepNameChange={setExplorerStepName}
+            onCustomStepChange={setCustomExplorerStep}
+            onWasdChange={setWasdEnabled}
+            onListeningModeChange={setExplorerListeningMode}
+            onPreviewDurationChange={setPreviewDuration}
+            onHear={() => void soundExplorerPoint(explorerPoint, true)}
+            onAddToCurve={addExplorerPointToCurve}
+            onMoveTraversalToNearest={moveTraversalToNearest}
+          />
 
           <section
             id="curve-source"
@@ -1061,7 +1583,7 @@ export function App() {
           >
             <div className="panel-heading">
               <div>
-                <p className="step-label">02 · Curve data</p>
+                <p className="step-label">03 · Curve data</p>
                 <h3 id="source-title">Choose or create an ordered curve</h3>
               </div>
             </div>
@@ -1075,7 +1597,21 @@ export function App() {
               >
                 <h4 id="error-title">Coordinate data needs attention</h4>
                 <p>{importError}</p>
-                <a href="#coordinate-text">Review the coordinate input</a>
+                <a
+                  href={
+                    importErrorTarget === 'file'
+                      ? '#coordinate-file'
+                      : importErrorTarget === 'drawing'
+                        ? '#drawing-controls'
+                        : '#coordinate-text'
+                  }
+                >
+                  {importErrorTarget === 'file'
+                    ? 'Review the file input'
+                    : importErrorTarget === 'drawing'
+                      ? 'Review the drawing controls'
+                      : 'Review the coordinate input'}
+                </a>
               </div>
             )}
             <div className="source-grid">
@@ -1128,6 +1664,13 @@ export function App() {
                 <button type="button" onClick={() => applyCurve(originalCurve)}>
                   Reset source curve
                 </button>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={resetApplication}
+                >
+                  Reset the whole application
+                </button>
               </fieldset>
             </div>
             <details className="import-details">
@@ -1154,8 +1697,19 @@ export function App() {
                   onChange={(event) =>
                     setCoordinateText(event.currentTarget.value)
                   }
-                  aria-invalid={Boolean(importError)}
-                  aria-describedby="coordinate-help coordinate-error"
+                  aria-invalid={
+                    importErrorTarget === 'text' && Boolean(importError)
+                  }
+                  aria-errormessage={
+                    importErrorTarget === 'text' && importError
+                      ? 'coordinate-error'
+                      : undefined
+                  }
+                  aria-describedby={
+                    importErrorTarget === 'text'
+                      ? 'coordinate-help coordinate-error'
+                      : 'coordinate-help'
+                  }
                   rows={7}
                   spellCheck={false}
                 />
@@ -1180,9 +1734,22 @@ export function App() {
                   id="coordinate-file"
                   type="file"
                   accept=".csv,.json,text/csv,application/json"
+                  aria-invalid={
+                    importErrorTarget === 'file' && Boolean(importError)
+                  }
+                  aria-errormessage={
+                    importErrorTarget === 'file' && importError
+                      ? 'coordinate-error'
+                      : undefined
+                  }
+                  aria-describedby={
+                    importErrorTarget === 'file'
+                      ? 'file-help coordinate-error'
+                      : 'file-help'
+                  }
                   onChange={(event) => void fileChanged(event)}
                 />
-                <p className="fine-print">
+                <p id="file-help" className="fine-print">
                   Files stay in your browser and must be no more than{' '}
                   {MAX_FILE_BYTES / 1_000_000} MB.
                 </p>
@@ -1190,10 +1757,15 @@ export function App() {
             </details>
             <details open={drawing}>
               <summary>Freehand drawing</summary>
-              <div className="details-content">
+              <div
+                id="drawing-controls"
+                className="details-content"
+                tabIndex={-1}
+              >
                 <p>
-                  Draw inside the plot with a pointer, pen or touch. Keyboard
-                  users can paste coordinates or choose a file.
+                  Draw inside the plot with a pointer, pen or touch. The point
+                  editor below provides the same practical authoring steps
+                  without drawing.
                 </p>
                 <div className="button-row">
                   <button
@@ -1203,6 +1775,7 @@ export function App() {
                       setDrawing(true);
                       setDrawingPoints([]);
                       setImportError('');
+                      setImportErrorTarget('text');
                     }}
                   >
                     Start drawing
@@ -1213,6 +1786,15 @@ export function App() {
                     disabled={!drawing}
                   >
                     Finish drawing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDrawingPoints((current) => current.slice(0, -1))
+                    }
+                    disabled={!drawing || drawingPoints.length === 0}
+                  >
+                    Undo last sampled point
                   </button>
                   <button
                     type="button"
@@ -1287,6 +1869,13 @@ export function App() {
                 Download curve and mapping JSON
               </button>
             </div>
+            <SourcePointEditor
+              points={curve.points}
+              closed={closed}
+              onMoveToPoint={moveToSourcePoint}
+              onReplacePoints={replaceCurvePoints}
+              onAnnounce={setAnnouncement}
+            />
           </section>
 
           <section
@@ -1296,16 +1885,25 @@ export function App() {
           >
             <div className="panel-heading">
               <div>
-                <p className="step-label">03 · Axis mapping</p>
+                <p className="step-label">04 · Axis mapping</p>
                 <h3 id="mapping-title">Map signed values to pitch</h3>
               </div>
-              <button
-                type="button"
-                onClick={() => void previewAxis('both', 0.5)}
-                disabled={!audioAvailable}
-              >
-                Test both voices
-              </button>
+              <div className="button-row">
+                <button
+                  type="button"
+                  onClick={() => void previewAxis('both', 0.5)}
+                  disabled={!audioAvailable}
+                >
+                  Test both voices
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void soundExplorerPoint(displayedPoint, true)}
+                  disabled={!audioAvailable}
+                >
+                  Hear current position
+                </button>
+              </div>
             </div>
             <p>
               The default pitch range is MIDI 48 to 72 (C3 to C5). Fractional
@@ -1408,23 +2006,25 @@ export function App() {
             <div>
               <h3>Audio control</h3>
               <p>
-                Sound begins after Play or a calibration button is pressed.
-                Escape fades the output.
+                Sound begins after Play, Hear current position or a calibration
+                button is pressed. Stop all sound is always visible once audio
+                has been enabled.
               </p>
             </div>
             <div>
               <h3>Keyboard and screen readers</h3>
               <p>
-                The controls use standard HTML elements. Screen readers announce
-                manual moves and changes to playback state. Coordinates stay out
-                of the live region during playback.
+                The controls use standard HTML elements. Manual explorer
+                announcements are coalesced. Timed coordinate announcements are
+                off by default.
               </p>
             </div>
             <div>
               <h3>Text readout</h3>
               <p>
-                The readout gives the exact x and y values. It also shows both
-                pitches and the playback position.
+                The current-position section remains selectable without audio.
+                It includes coordinates, notes, frequencies, domains, voice
+                states and traversal state.
               </p>
             </div>
             <div>
@@ -1434,6 +2034,114 @@ export function App() {
                 motion setting removes interface transitions.
               </p>
             </div>
+          </div>
+          <details className="keyboard-reference">
+            <summary>Complete keyboard reference</summary>
+            <div className="details-content keyboard-help-grid">
+              <section aria-labelledby="keyboard-general">
+                <h3 id="keyboard-general">General page navigation</h3>
+                <p>
+                  Use <kbd>Tab</kbd> and <kbd>Shift</kbd>+<kbd>Tab</kbd> to move
+                  between controls. Use <kbd>Enter</kbd> or <kbd>Space</kbd> on
+                  native buttons. The first Tab reveals skip links.
+                </p>
+              </section>
+              <section aria-labelledby="keyboard-follow">
+                <h3 id="keyboard-follow">Follow-curve navigation</h3>
+                <p>
+                  On Position along curve, <kbd>Left</kbd> and <kbd>Right</kbd>{' '}
+                  change progress. <kbd>Home</kbd> selects the start and{' '}
+                  <kbd>End</kbd> selects the end or closing seam. Named buttons
+                  provide the same actions.
+                </p>
+              </section>
+              <section aria-labelledby="keyboard-plane">
+                <h3 id="keyboard-plane">Two-dimensional plane navigation</h3>
+                <p>
+                  Enter the mode, then focus stays on the bounded controller.
+                  <kbd>Left</kbd>/<kbd>Right</kbd> change x and <kbd>Up</kbd>/
+                  <kbd>Down</kbd> change numeric y. <kbd>Shift</kbd> uses the
+                  coarse step. <kbd>Escape</kbd> returns to the curve.{' '}
+                  <kbd>Tab</kbd> leaves normally.
+                </p>
+              </section>
+              <section aria-labelledby="keyboard-wasd">
+                <h3 id="keyboard-wasd">Optional WASD controls</h3>
+                <p>
+                  WASD starts off. When enabled, it works only on the focused
+                  plane controller: <kbd>W</kbd> increases y, <kbd>A</kbd>{' '}
+                  decreases x, <kbd>S</kbd> decreases y and <kbd>D</kbd>{' '}
+                  increases x.
+                </p>
+              </section>
+              <section aria-labelledby="keyboard-safety">
+                <h3 id="keyboard-safety">Audio-safety control</h3>
+                <p>
+                  When audio is sounding, <kbd>Escape</kbd> fades it outside
+                  editable fields and dialogs. The visible Stop all sound button
+                  performs the same safety action.
+                </p>
+              </section>
+              <section aria-labelledby="keyboard-screen-reader">
+                <h3 id="keyboard-screen-reader">Screen-reader note</h3>
+                <p>
+                  Browse and Quick Nav modes may retain arrow or character keys.
+                  The native position, x and y controls remain available. You do
+                  not need to turn off your screen reader.
+                </p>
+              </section>
+            </div>
+          </details>
+          <details className="definitions">
+            <summary>Terms used in TIMUDS</summary>
+            <dl className="term-list">
+              <div>
+                <dt>Sonification</dt>
+                <dd>Using sound to present information from data.</dd>
+              </div>
+              <div>
+                <dt>Axis domain</dt>
+                <dd>The minimum and maximum numeric values for one axis.</dd>
+              </div>
+              <div>
+                <dt>Pitch mapping</dt>
+                <dd>The rule that converts a coordinate into a frequency.</dd>
+              </div>
+              <div>
+                <dt>Arc-length traversal</dt>
+                <dd>Movement at an even spatial speed along the curve.</dd>
+              </div>
+              <div>
+                <dt>Open curve</dt>
+                <dd>A curve that ends at its final supplied point.</dd>
+              </div>
+              <div>
+                <dt>Closed curve</dt>
+                <dd>A curve with a final segment back to its first point.</dd>
+              </div>
+              <div>
+                <dt>Two-dimensional exploration</dt>
+                <dd>
+                  Moving x and y independently without editing or following the
+                  curve.
+                </dd>
+              </div>
+            </dl>
+          </details>
+          <div className="accessibility-statement">
+            <h3>Accessibility review status</h3>
+            <p>
+              The latest code review is dated 23 July 2026. Automated tests run
+              in Chromium and include keyboard flows and representative axe
+              checks. No screen-reader, mobile-device or disabled-participant
+              test has been recorded yet. Those checks remain required.
+            </p>
+            <p>
+              TIMUDS targets applicable WCAG 2.2 Level A and AA criteria. This
+              is a design target, not a claim of conformance. TIMUDS is
+              exploratory research software and has not been validated as
+              assistive technology or scientific instrumentation.
+            </p>
           </div>
           <div className="limitation-note">
             <h3>Known limitations</h3>

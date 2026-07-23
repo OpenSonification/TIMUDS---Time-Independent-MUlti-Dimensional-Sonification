@@ -7,7 +7,7 @@ export interface Point {
 
 export interface CurveData {
   name: string;
-  source: 'preset' | 'text' | 'file' | 'drawing';
+  source: 'preset' | 'text' | 'file' | 'drawing' | 'editor';
   points: Point[];
   closed: boolean;
 }

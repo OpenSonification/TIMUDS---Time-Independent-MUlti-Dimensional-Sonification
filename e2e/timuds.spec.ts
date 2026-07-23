@@ -95,7 +95,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
-test('loads the default circle silently and production assets are relative', async ({
+test('loads silently, exposes skip links and uses relative production assets', async ({
   page,
 }) => {
   await expect(
@@ -113,25 +113,40 @@ test('loads the default circle silently and production assets are relative', asy
     'src',
     /^\.\/assets\//,
   );
+  await page.keyboard.press('Tab');
+  const skipLink = page.getByRole('link', {
+    name: 'Skip to the TIMUDS workspace',
+  });
+  await expect(skipLink).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#main-content')).toBeFocused();
   expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
     [],
   );
 });
 
-test('starts two-voice playback, holds, and moves manually in both directions', async ({
+test('enables audio deliberately and operates the complete transport', async ({
   page,
 }) => {
-  await page.getByRole('button', { name: /^▶ Play$/ }).click();
+  await page.getByRole('button', { name: 'Enable audio' }).click();
+  await expect(page.getByText('Audio sounding').locator('..')).toContainText(
+    'No',
+  );
+  await page.getByRole('button', { name: 'Play' }).click();
   await expect(page.getByText(/^Playing$/).first()).toBeVisible();
-  await page.getByRole('button', { name: /Hold$/ }).click();
+  await page.getByRole('button', { name: 'Hold' }).click();
   await expect(
     page.getByText(/Holding at current point/).first(),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Home' }).click();
-  await page.getByRole('button', { name: '+5%' }).click();
-  await expect(page.getByText('5.0%').first()).toBeVisible();
-  await page.getByRole('button', { name: '−1%' }).click();
-  await expect(page.getByText('4.0%').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Move to start' }).click();
+  await page.getByRole('button', { name: 'Step forwards' }).click();
+  await expect(page.getByLabel('Position along curve')).toHaveValue('0.01');
+  await page.getByRole('button', { name: 'Step backwards' }).click();
+  await expect(page.getByLabel('Position along curve')).toHaveValue('0');
+  await page.getByRole('button', { name: 'Stop all sound' }).first().click();
+  await expect(page.getByText('Audio sounding').locator('..')).toContainText(
+    'No',
+  );
   expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
     [],
   );
@@ -178,22 +193,179 @@ test('creates a freehand curve with pointer input', async ({ page }) => {
   await expect(page.getByText('Freehand curve · drawing')).toBeVisible();
 });
 
-test('changes mapping and operates transport with keyboard', async ({
+test('uses the native follow-curve slider with standard keyboard behaviour', async ({
+  page,
+}) => {
+  const slider = page.getByLabel('Position along curve');
+  await slider.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(slider).toHaveValue('0.01');
+  await page.keyboard.press('Home');
+  await expect(slider).toHaveValue('0');
+  await page.keyboard.press('End');
+  await expect(slider).toHaveValue('1');
+  await page.getByLabel('Curve preset').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(slider).toHaveValue('1');
+});
+
+test('explores x and y independently with focus-scoped arrows', async ({
   page,
 }) => {
   await page.selectOption('#axis-x-timbre', 'bright');
   await expect(page.locator('#axis-x-timbre')).toHaveValue('bright');
   await page.getByLabel('Centre both voices (mono-friendly)').check();
-  const plot = page.getByRole('img', { name: 'Ordered two-dimensional curve' });
-  await plot.focus();
-  await page.keyboard.press('Space');
-  await expect(page.getByText(/^Playing$/).first()).toBeVisible();
-  await page.keyboard.press('Space');
-  await expect(
-    page.getByText(/Holding at current point/).first(),
-  ).toBeVisible();
-  await page.keyboard.press('Shift+ArrowRight');
-  await expect(page.getByText(/5\.\d%/).first()).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Enter two-dimensional exploration' })
+    .click();
+  const controller = page.getByRole('group', {
+    name: 'Plane movement controller',
+  });
+  await expect(controller).toBeFocused();
+  const xValue = page.getByText('X value').locator('..').locator('dd');
+  const yValue = page.getByText('Y value').locator('..').locator('dd');
+  await expect(xValue).toHaveText('1');
+  await expect(yValue).toHaveText('0');
+  await page.keyboard.press('ArrowLeft');
+  await expect(xValue).toHaveText('0.95');
+  await expect(yValue).toHaveText('0');
+  await page.keyboard.press('ArrowUp');
+  await expect(yValue).toHaveText('0.05');
+  await page.getByText('Advanced Y mapping').click();
+  await page
+    .getByRole('group', { name: 'Y-axis voice' })
+    .getByLabel('Invert pitch direction')
+    .check();
+  await controller.focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(yValue).toHaveText('0.1');
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(xValue).toHaveText('0.75');
   await page.keyboard.press('Escape');
-  await expect(page.getByText(/Stopped\. Audio off/).first()).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Enter two-dimensional exploration' }),
+  ).toBeFocused();
+  await expect(
+    page
+      .locator('#current-position')
+      .getByText('Mode', { exact: true })
+      .locator('..'),
+  ).toContainText('Following curve');
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+});
+
+test('leaves the explorer with Tab and keeps optional WASD scoped', async ({
+  page,
+}) => {
+  await page
+    .getByRole('button', { name: 'Enter two-dimensional exploration' })
+    .click();
+  const controller = page.getByRole('group', {
+    name: 'Plane movement controller',
+  });
+  const yValue = page.getByText('Y value').locator('..').locator('dd');
+  await page.keyboard.type('w');
+  await expect(yValue).toHaveText('0');
+  await page.getByLabel('Enable WASD in the two-dimensional explorer').check();
+  await controller.focus();
+  await page.keyboard.type('w');
+  await expect(yValue).toHaveText('0.05');
+  for (let index = 0; index < 12; index += 1) {
+    await page.keyboard.press('ArrowLeft');
+  }
+  await page.waitForTimeout(350);
+  await expect(page.locator('.sr-only[role="status"]')).toHaveCount(1);
+  await expect(page.locator('.sr-only[role="status"]')).toContainText(
+    /Explorer position|boundary reached/,
+  );
+  await page.keyboard.press('Tab');
+  await expect(controller).not.toBeFocused();
+  await page.keyboard.type('w');
+  await expect(yValue).toHaveText('0.05');
+  await page.getByText('Paste or upload coordinate data').click();
+  const text = page.getByLabel('Coordinate data');
+  await text.focus();
+  await page.keyboard.type('wasd');
+  await expect(text).toHaveValue(/wasd/);
+});
+
+test('inspects, adds, reorders and deletes points without dragging', async ({
+  page,
+}) => {
+  await page.getByLabel('Curve preset').selectOption('Triangle');
+  await page.getByRole('button', { name: 'Load preset' }).click();
+  await page.getByText('Inspect and edit source points').click();
+  await expect(
+    page.getByRole('table', { name: /Ordered source points/ }),
+  ).toBeVisible();
+  await page.getByLabel('New point X value').fill('2');
+  await page.getByLabel('New point Y value').fill('3');
+  await page.getByRole('button', { name: 'Add point' }).click();
+  const pointCount = page
+    .locator('.curve-summary')
+    .getByText('Points', { exact: true })
+    .locator('..');
+  await expect(pointCount).toContainText('4');
+  await page.getByLabel('X value for point 4').fill('2.5');
+  await page.getByRole('button', { name: 'Update point 4' }).click();
+  await page.getByRole('button', { name: 'Move point 4 earlier' }).click();
+  await page.getByRole('button', { name: 'Delete point 3' }).click();
+  await expect(page.getByLabel('Point number', { exact: true })).toBeFocused();
+  await expect(pointCount).toContainText('3');
+  const downloadPromise = page.waitForEvent('download');
+  await page
+    .getByRole('button', { name: 'Download curve and mapping JSON' })
+    .click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('timuds-curve-and-mapping.json');
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+});
+
+test('has no serious axe findings in error, explorer, dark and narrow states', async ({
+  page,
+}) => {
+  await page.getByText('Paste or upload coordinate data').click();
+  await page.getByLabel('Coordinate data').fill('broken');
+  await page.getByRole('button', { name: 'Import pasted coordinates' }).click();
+  await expect(page.getByRole('alert')).toBeFocused();
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+
+  await page.getByRole('textbox', { name: 'Coordinate data' }).fill('0,0\n1,1');
+  await page.getByRole('button', { name: 'Import pasted coordinates' }).click();
+  await page
+    .getByRole('button', { name: 'Enter two-dimensional exploration' })
+    .click();
+  await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+
+  await page.emulateMedia({
+    colorScheme: 'light',
+    reducedMotion: 'reduce',
+    forcedColors: 'active',
+  });
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+
+  await page.emulateMedia({
+    colorScheme: 'dark',
+    reducedMotion: 'reduce',
+    forcedColors: 'none',
+  });
+  await page.setViewportSize({ width: 320, height: 800 });
+  expect(seriousViolations(await new AxeBuilder({ page }).analyze())).toEqual(
+    [],
+  );
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
 });

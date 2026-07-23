@@ -1,6 +1,6 @@
 # TIMUDS
 
-**Time-Independent Multidimensional Sonification** — hear position, not just progression.
+**Time-Independent Multidimensional Sonification**
 
 TIMUDS is a client-side proof of principle for sonifying an ordered two-dimensional curve. Conventional sonification often consumes x as time and maps only y to sound. TIMUDS keeps x and y as independent data dimensions: one sustained synthetic voice carries x position and a distinguishable second voice carries y position. Time controls only how the application travels through the supplied point order.
 
@@ -12,12 +12,13 @@ The default circle demonstrates why this matters. Its x coordinate repeatedly ri
 
 - Five deterministic sources: circle, triangle, diagonal line, Lissajous curve and spiral.
 - Local CSV/JSON paste and file import with bounded input and useful validation.
-- Optional pointer, pen and touch freehand drawing in a visible `[-1, 1]` domain.
+- Point-by-point native editing, paginated source-point inspection and optional freehand drawing.
 - Open/closed curves, reverse traversal, reset, summaries and reproducible JSON download.
 - Constant-spatial-speed and uniform-segment traversal; timed, looped and manual control.
 - Two simultaneous Web Audio voices with four locally generated timbres.
 - Independent automatic/manual domains, shared domain, pitch inversion, gains, mute, solo and optional panning.
-- Responsive SVG, persistent numeric/pitch readout, keyboard controls and accessible alternatives.
+- Native follow-curve navigation and independent two-dimensional keyboard exploration.
+- Responsive SVG, persistent numeric/pitch/state readout and configurable announcements.
 - No backend, tracking, cookies, accounts, external fonts, samples or runtime service.
 
 ## Run locally
@@ -93,21 +94,28 @@ Progress is normalised from 0 to 1 and never requires monotonic x.
 
 Timed playback uses `AudioContext.currentTime`, a monotonic audio clock. `requestAnimationFrame` updates the visual marker but does not determine duration. A non-looping 20-second circle therefore completes one circuit in approximately 20 seconds independent of visual frame rate.
 
-Hold stops traversal and sustains the current x/y sounds. Stop sound fades to silence and retains position. Manual steps use 1% or 5% of curve progress rather than raw point indices.
+Hold stops traversal and sustains the current x/y sounds. Stop all sound fades
+to silence and retains position. The native slider and named step buttons use
+the selected normalised progress step rather than raw point indices.
 
 ## Keyboard controls
 
-Shortcuts apply when focus is within the sonification workspace and not in an editable or native action control.
+The page does not capture arrow or character keys globally. Follow-curve
+navigation uses the native **Position along curve** range, where Left/Right and
+Home/End retain browser behaviour.
 
-| Key                  | Action                   |
-| -------------------- | ------------------------ |
-| Space                | Play or hold             |
-| Left / Right         | Move by 1%               |
-| Shift + Left / Right | Move by 5%               |
-| Home / End           | Move to beginning or end |
-| Escape               | Fade and stop all sound  |
+The two-dimensional explorer has one focused controller:
 
-Every shortcut also has a visible native button or slider.
+| Key             | Action                              |
+| --------------- | ----------------------------------- |
+| Left / Right    | Decrease / increase numeric x       |
+| Up / Down       | Increase / decrease numeric y       |
+| Shift + Arrow   | Use the configured coarse step      |
+| Escape          | Return to the saved curve position  |
+| Tab / Shift+Tab | Leave the controller without a trap |
+
+Native x and y ranges and number inputs provide the same operation. WASD is
+optional, off by default and active only on the focused controller.
 
 ## Audio design and safety
 
@@ -119,9 +127,16 @@ No automated test can establish perceptual clarity or listening safety for every
 
 ## Accessibility approach
 
-TIMUDS is designed to target WCAG 2.2 Level AA; this is a target, not a conformance claim. It uses landmarks, native controls, grouped fields, a skip link, visible focus, error focus management, polite discrete status messages, reflow, light/dark schemes, forced-colour support and reduced-motion handling. Rapid coordinates are not live-announced; optional quarter-progress announcements are off by default. The SVG has a concise accessible description, while adjacent text gives the complete useful state.
+TIMUDS targets applicable WCAG 2.2 Level A and AA criteria. This is a target,
+not a conformance claim. Current work includes native controls, a complete text
+readout, point editing without dragging, focus-scoped plane exploration,
+coalesced announcements, reflow, visible focus and deliberate audio.
 
-See [docs/accessibility.md](docs/accessibility.md) for checks, limitations and the manual audit checklist. Report a problem using the repository’s **Issues → New issue** page and add an `accessibility` label if available.
+Read the [accessibility approach](docs/accessibility.md), [implementation
+audit](docs/accessibility-audit.md), [WCAG traceability
+matrix](docs/wcag-2.2-aa-matrix.md) and [screen-reader test
+plan](docs/screen-reader-test-plan.md). Manual screen-reader and device results
+remain unrecorded.
 
 ## Privacy and browser requirements
 
@@ -179,6 +194,7 @@ Pushes to `main` then run validation and deployment. The workflow can also be st
 - Freehand input uses deterministic distance filtering and arc-length resampling; it is an authoring convenience, not a digitisation measurement.
 - The app does not import its exported full configuration yet; coordinate arrays can be re-imported separately.
 - Synthetic output differs across browser/OS/device audio pipelines. No automated test judges timbre separability, distortion or loudness.
-- Screen-reader/browser combinations and high-contrast implementations vary and still need manual review.
+- Screen-reader/browser combinations, high-contrast implementations, 400% zoom
+  and audio/speech coexistence still need manual review.
 
 Before using TIMUDS in research, define and validate a protocol, retain exported settings, calibrate output equipment and independently establish that the mapping is appropriate for the intended question.

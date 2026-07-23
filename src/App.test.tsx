@@ -1,5 +1,5 @@
 import axe from 'axe-core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
@@ -88,7 +88,7 @@ afterEach(() => {
 
 describe('TIMUDS workspace', () => {
   it('loads the circle in a silent state without creating audio', () => {
-    render(<App />);
+    const { container } = render(<App />);
     expect(
       screen.getByRole('heading', { level: 1, name: /Listen around/i }),
     ).toBeInTheDocument();
@@ -97,6 +97,20 @@ describe('TIMUDS workspace', () => {
       screen.getAllByText(/Silent\. Audio has not started/).length,
     ).toBeGreaterThan(0);
     expect(MockAudioContext.constructions).toBe(0);
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(
+      screen.getByRole('link', { name: 'Skip to current position' }),
+    ).toHaveAttribute('href', '#current-position');
+    expect(screen.getByLabelText('Position along curve')).toHaveAttribute(
+      'type',
+      'range',
+    );
+    expect(screen.getByLabelText('X coordinate slider')).toBeInTheDocument();
+    expect(screen.getByText('Complete keyboard reference')).toBeInTheDocument();
+    const ids = [...container.querySelectorAll('[id]')].map(
+      (element) => element.id,
+    );
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('loads a selected preset', async () => {
@@ -129,36 +143,34 @@ describe('TIMUDS workspace', () => {
   it('plays, holds, stops and resets only after user action', async () => {
     const user = userEvent.setup();
     render(<App />);
-    await user.click(screen.getByRole('button', { name: /^▶ Play$/ }));
+    await user.click(screen.getByRole('button', { name: 'Play' }));
     expect(MockAudioContext.constructions).toBe(1);
     expect(screen.getAllByText(/^Playing$/).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: /Hold$/ }));
+    await user.click(screen.getByRole('button', { name: 'Hold' }));
     expect(
       screen.getAllByText(/Holding at current point/).length,
     ).toBeGreaterThan(0);
-    await user.click(screen.getAllByRole('button', { name: /Stop sound/ })[0]!);
-    expect(screen.getAllByText(/Stopped\. Audio off/).length).toBeGreaterThan(
-      0,
+    await user.click(
+      screen.getAllByRole('button', { name: 'Stop all sound' })[0]!,
     );
-    await user.click(screen.getByRole('button', { name: /Reset to start/ }));
-    expect(screen.getByText('0.0%')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Stopped$/).length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Reset traversal' }));
+    expect(screen.getByText(/Normalised progress: 0\.000/)).toBeInTheDocument();
   });
 
-  it('supports workspace keyboard play, stepping and Escape', async () => {
+  it('uses native follow-curve controls without a broad workspace shortcut', async () => {
     const user = userEvent.setup();
     render(<App />);
+    const slider = screen.getByLabelText('Position along curve');
+    fireEvent.change(slider, { target: { value: '0.01' } });
+    expect(slider).toHaveValue('0.01');
     const plot = screen.getByRole('img', {
       name: 'Ordered two-dimensional curve',
     });
-    plot.focus();
-    await user.keyboard(' ');
-    expect(screen.getAllByText(/^Playing$/).length).toBeGreaterThan(0);
+    expect(plot).not.toHaveAttribute('tabindex');
+    document.body.focus();
     await user.keyboard('{ArrowRight}');
-    expect(screen.getByText('1.0%')).toBeInTheDocument();
-    await user.keyboard('{Escape}');
-    expect(screen.getAllByText(/Stopped\. Audio off/).length).toBeGreaterThan(
-      0,
-    );
+    expect(slider).toHaveValue('0.01');
   });
 
   it('updates visible coordinate and pitch data after a manual move', async () => {
@@ -166,12 +178,94 @@ describe('TIMUDS workspace', () => {
     render(<App />);
     const xValue = screen.getByText('X value').nextElementSibling;
     expect(xValue).toHaveTextContent('1');
-    await user.click(screen.getByRole('button', { name: '+5%' }));
-    expect(screen.getByText('5.0%')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Step forwards' }));
+    expect(screen.getByText(/Normalised progress: 0\.010/)).toBeInTheDocument();
     expect(xValue).not.toHaveTextContent(/^1$/);
-    expect(screen.getByText('X pitch').nextElementSibling).toHaveTextContent(
-      /Hz/,
+    expect(
+      screen.getByText('X frequency').nextElementSibling,
+    ).toHaveTextContent(/Hz/);
+  });
+
+  it('explores x and y independently and restores focus on Escape', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Enter two-dimensional exploration',
+      }),
     );
+    const controller = screen.getByRole('group', {
+      name: 'Plane movement controller',
+    });
+    expect(controller).toHaveFocus();
+    const xValue = screen.getByText('X value').nextElementSibling;
+    const yValue = screen.getByText('Y value').nextElementSibling;
+    expect(xValue).toHaveTextContent('1');
+    expect(yValue).toHaveTextContent('0');
+    await user.keyboard('{ArrowLeft}');
+    expect(xValue).toHaveTextContent('0.95');
+    expect(yValue).toHaveTextContent('0');
+    await user.keyboard('{ArrowUp}');
+    expect(yValue).toHaveTextContent('0.05');
+    await user.keyboard('{Shift>}{ArrowLeft}{/Shift}');
+    expect(xValue).toHaveTextContent('0.75');
+    await user.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', {
+          name: 'Enter two-dimensional exploration',
+        }),
+      ).toHaveFocus(),
+    );
+    expect(screen.getByText('Following curve')).toBeInTheDocument();
+  });
+
+  it('keeps WASD off by default and scoped to the focused explorer', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Enter two-dimensional exploration',
+      }),
+    );
+    const controller = screen.getByRole('group', {
+      name: 'Plane movement controller',
+    });
+    const yValue = screen.getByText('Y value').nextElementSibling;
+    await user.keyboard('w');
+    expect(yValue).toHaveTextContent('0');
+    await user.click(
+      screen.getByLabelText('Enable WASD in the two-dimensional explorer'),
+    );
+    controller.focus();
+    await user.keyboard('w');
+    expect(yValue).toHaveTextContent('0.05');
+    const coordinateText = screen.getByLabelText('Coordinate data');
+    await user.click(coordinateText);
+    await user.keyboard('wasd');
+    expect((coordinateText as HTMLTextAreaElement).value).toContain('wasd');
+  });
+
+  it('adds an explorer coordinate only after the visible action', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const pointCount = screen.getByText('Points', {
+      selector: '.curve-summary dt',
+    }).nextElementSibling;
+    expect(pointCount).toHaveTextContent('128');
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Enter two-dimensional exploration',
+      }),
+    );
+    await user.keyboard('{ArrowLeft}{ArrowUp}');
+    expect(pointCount).toHaveTextContent('128');
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Add this coordinate to the curve',
+      }),
+    );
+    expect(pointCount).toHaveTextContent('129');
   });
 
   it('keeps inspection usable when Web Audio is unavailable', () => {
@@ -184,17 +278,34 @@ describe('TIMUDS workspace', () => {
     expect(
       screen.getByText(/This browser has no Web Audio support/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^▶ Play$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
     expect(
       screen.getByRole('img', { name: 'Ordered two-dimensional curve' }),
     ).toBeInTheDocument();
     expect(screen.getByText('X value')).toBeInTheDocument();
+    expect(screen.getByLabelText('X coordinate slider')).toBeDisabled();
+    expect(
+      screen.getByText(/current-position section remains selectable/i),
+    ).toBeInTheDocument();
   });
 
-  it('has no serious or critical axe violations in the default and error states', async () => {
+  it('has no serious or critical axe violations in representative states', async () => {
     const user = userEvent.setup();
     const { container } = render(<App />);
     let results = await axe.run(container, {
+      runOnly: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'],
+    });
+    expect(
+      results.violations.filter((violation) =>
+        ['serious', 'critical'].includes(violation.impact ?? ''),
+      ),
+    ).toEqual([]);
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Enter two-dimensional exploration',
+      }),
+    );
+    results = await axe.run(container, {
       runOnly: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'],
     });
     expect(

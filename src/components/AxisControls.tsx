@@ -130,12 +130,16 @@ export function AxisControls({
             Automatic domain from curve
           </label>
           <span />
+          <p id={`${id}-manual-domain-help`} className="fine-print full-row">
+            Turn off automatic domain to edit the manual minimum and maximum.
+          </p>
           <label htmlFor={`${id}-min`}>Manual minimum</label>
           <input
             id={`${id}-min`}
             type="number"
             value={config.manualDomain.minimum}
             disabled={config.automaticDomain}
+            aria-describedby={`${id}-manual-domain-help`}
             onChange={(event) => {
               const value = event.currentTarget.valueAsNumber;
               if (Number.isFinite(value)) {
@@ -152,6 +156,7 @@ export function AxisControls({
             type="number"
             value={config.manualDomain.maximum}
             disabled={config.automaticDomain}
+            aria-describedby={`${id}-manual-domain-help`}
             onChange={(event) => {
               const value = event.currentTarget.valueAsNumber;
               if (Number.isFinite(value)) {
