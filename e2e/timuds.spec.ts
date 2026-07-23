@@ -120,6 +120,44 @@ async function mockAudioContext(page: Page): Promise<void> {
       value: InstrumentedAudioContext,
       configurable: true,
     });
+
+    class SpokenUtterance {
+      lang = '';
+      pitch = 1;
+      rate = 1;
+      text: string;
+      voice: SpeechSynthesisVoice | null = null;
+      volume = 1;
+
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+    const speechLog = {
+      cancellations: 0,
+      spoken: [] as string[],
+    };
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      value: SpokenUtterance,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'speechSynthesis', {
+      value: {
+        cancel: () => {
+          speechLog.cancellations += 1;
+        },
+        getVoices: () => [],
+        speak: (utterance: SpokenUtterance) => {
+          speechLog.spoken.push(utterance.text);
+        },
+      },
+      configurable: true,
+    });
+    (
+      window as typeof window & {
+        __timudsSpeech?: typeof speechLog;
+      }
+    ).__timudsSpeech = speechLog;
   });
 }
 
@@ -214,8 +252,21 @@ test('enables audio deliberately and operates the complete transport', async ({
   await expect(page.getByText('Audio sounding').locator('..')).toContainText(
     'No',
   );
+  await expect(page.getByLabel('Voice over')).toBeChecked();
   await page.getByRole('button', { name: 'Play' }).click();
   await expect(page.getByText(/^Playing$/).first()).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as typeof window & {
+              __timudsSpeech?: { spoken: string[] };
+            }
+          ).__timudsSpeech?.spoken,
+      ),
+    )
+    .toContain('Highest X coordinate. X 1. Y 0.');
   await page.getByRole('button', { name: 'Hold' }).click();
   await expect(
     page.getByText(/Holding at current point/).first(),
@@ -244,13 +295,23 @@ test('switches sound modes safely and exposes guarded keyboard help', async ({
   await page.getByLabel('Axis voices').check();
   const xVoice = page.getByRole('group', { name: 'X-axis voice' });
   const yVoice = page.getByRole('group', { name: 'Y-axis voice' });
-  await expect(xVoice.getByLabel('High MIDI note')).toHaveValue('60');
-  await expect(yVoice.getByLabel('Low MIDI note')).toHaveValue('67');
-  await xVoice.getByText('Advanced X mapping').click();
-  await xVoice.getByLabel('High MIDI note').fill('70');
-  await expect(page.getByText(/X and Y pitch ranges overlap/)).toBeVisible();
-  await page.getByRole('button', { name: 'Restore separated ranges' }).click();
-  await expect(page.getByText(/X and Y pitch ranges overlap/)).toHaveCount(0);
+  await expect(xVoice.getByLabel('Instrument sound')).toHaveValue('warm');
+  await expect(yVoice.getByLabel('Instrument sound')).toHaveValue('reed');
+  await expect(xVoice.getByLabel('Low MIDI note')).toHaveValue('60');
+  await expect(yVoice.getByLabel('Low MIDI note')).toHaveValue('60');
+  await expect(xVoice.getByLabel(/Listening gain/)).toHaveValue('0.76');
+  await expect(yVoice.getByLabel(/Listening gain/)).toHaveValue('0.76');
+  await yVoice.getByLabel('Instrument sound').selectOption('warm');
+  await expect(
+    page.getByText(/same instrument across overlapping pitch ranges/),
+  ).toBeVisible();
+  await page
+    .getByRole('button', { name: 'Restore contrasting sounds' })
+    .click();
+  await expect(yVoice.getByLabel('Instrument sound')).toHaveValue('reed');
+  await expect(
+    page.getByText(/same instrument across overlapping pitch ranges/),
+  ).toHaveCount(0);
 
   await page.getByLabel('Spatial voice').check();
   await page.getByLabel('Mono-compatible output').check();

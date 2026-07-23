@@ -38,21 +38,23 @@ does not start audio.
 
 ## Axis voices
 
-Axis voices keeps separate X and Y sounds. X starts at MIDI 48–60 with a warm
-timbre and a pan position of −0.65. Y starts at MIDI 67–79 with a reed timbre
-and a pan position of +0.65. Register, timbre, visible labels and numeric
-readouts all identify the dimensions; stereo is never the only distinction.
+Axis voices keeps separate X and Y sounds. Both start in the readily audible
+MIDI 60–72 range, at the same listening gain and in the centre. X uses Warm
+organ and Y uses Clarinet-like reed. The instrument is the primary audible
+identifier; visible labels and numeric readouts carry the same identity without
+sound.
 
-When custom pitch ranges touch or overlap, TIMUDS displays a warning and a
-button that restores the separated defaults. Optional local MIDI note maps may
-replace either continuous range.
+If both voices use the same instrument and their pitch ranges overlap, TIMUDS
+warns that they may blend together. The repair button restores the contrasting
+instruments without discarding custom pitch ranges or MIDI note maps.
+Optional local MIDI note maps may replace either continuous range.
 
 ## Mono output
 
 Mono-compatible output selects Axis voices and centres both voices. TIMUDS does
 not retain Spatial voice in mono because doing so would discard X's
-left-to-right mapping. The separated registers and timbres keep both dimensions
-available on a single channel.
+left-to-right mapping. The contrasting timbres keep both dimensions available
+on a single channel.
 
 Use headphones only at a comfortable level. Also check laptop speakers and
 mono output before relying on a mapping. No automatic test establishes

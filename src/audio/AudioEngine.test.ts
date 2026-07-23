@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { INSTRUMENTS } from '../core/instruments';
 import { DEFAULT_PREFERENCES } from '../core/preferences';
 import type { AxisConfig } from '../core/types';
 import {
@@ -258,7 +259,7 @@ describe('persistent audio engine', () => {
     });
 
     expect(context.gains[3]!.gain.setTargetAtTime.mock.calls.at(-1)?.[0]).toBe(
-      0.7 * 0.1 * 0.34 * 0.86,
+      0.7 * 0.1 * 0.34 * INSTRUMENTS.warm.gainCompensation,
     );
     expect(context.gains[10]!.gain.setTargetAtTime.mock.calls.at(-1)?.[0]).toBe(
       0.7 * 0.34 * 1.05,
@@ -287,7 +288,7 @@ describe('persistent audio engine', () => {
       context.oscillators[3]!.frequency.setTargetAtTime,
     ).toHaveBeenLastCalledWith(0.75, 4, expect.any(Number));
     expect(context.gains[7]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      0.7 * 0.34 * 0.86 * 0.4,
+      0.7 * 0.34 * INSTRUMENTS.warm.gainCompensation * 0.4,
       4,
       expect.any(Number),
     );

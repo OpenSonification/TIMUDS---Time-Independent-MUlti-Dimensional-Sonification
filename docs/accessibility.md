@@ -25,6 +25,9 @@ Detailed evidence:
   is bounded to 0.35–2.5 times the instrument filter and pulse rate to
   0.75–8 Hz. The live readout exposes the exact mapped value.
 - Mono-compatible output preserves both dimensions with centred Axis voices.
+- Default Axis voices share a centred MIDI 60–72 register and matched listening
+  gains. Contrasting instruments identify X and Y without making loudness,
+  register or stereo hearing the distinction.
 - Sixteen independently selectable synthetic timbres with visible
   descriptions, named calibration controls and a persisted 0.5–5 second
   test-sound length.
@@ -39,9 +42,11 @@ Detailed evidence:
 - Optional WASD, off by default and active only on the focused controller.
 - Point-by-point curve editing, deletion and reordering without drawing or dragging.
 - Focused import-error summary linked to preserved invalid input with line or item information where possible.
-- One polite live status for discrete messages. Timed and curve-benchmark
-  announcements are off by default. Rapid explorer messages replace a pending
-  message after a short idle period.
+- A default-on Voice over checkbox beside Play uses the browser's installed
+  English speech voice for discrete curve landmarks. One polite live status
+  carries the matching text. Timed position announcements remain off by
+  default, and rapid explorer messages replace a pending message after a short
+  idle period.
 - Light and dark schemes, reduced-motion handling, forced-colour rules and narrow single-column reflow.
 - A concise SVG description with detailed data available outside the image.
 
@@ -131,16 +136,23 @@ rates replace changing-pitch details when their mapping is active. Coordinates
 only is the initial manual-movement setting. Timed playback announcements are
 initially Off and may be set to 1, 2, 5 or 10 seconds.
 
-Curve-benchmark narration is a separate opt-in setting. During playback it
-announces the first crossing of the lowest and highest X and Y source-point
-values; shared extrema form one message. Constant axes receive one constant-axis
-message. The current curve's benchmark names and exact coordinates are listed
-beside the setting before sound or speech is enabled.
+Curve-landmark Voice over starts checked and sits next to Play. During playback
+it uses `SpeechSynthesisUtterance` with an installed English voice to speak the
+first crossing of the lowest and highest X and Y source-point values. Shared
+extrema form one phrase. Constant axes receive one constant-axis phrase. Hold,
+Stop all sound, Reset, disabling Voice over and page teardown cancel queued
+speech. No speech starts before Play.
+
+The current curve's landmark names and exact coordinates remain ordinary text.
+If browser speech synthesis is absent, the checkbox is disabled and this text
+remains available. Screen-reader users should manually check for duplicated
+speech from the browser voice and live status; the checkbox can disable browser
+speech.
 
 The current-position section is static navigable text, not a live region.
 During playback React publishes it at a controlled rate of about ten times per
 second while the audio clock remains authoritative. Animation frames are never
-announced; only a user-selected timed interval or a crossed benchmark can
+announced; only a user-selected timed interval or a crossed landmark can
 produce playback speech.
 
 ## Visual and numeric alternatives
@@ -190,7 +202,7 @@ Available checks cover:
   overlap detection, progress thresholds and loops, shortcut guards, validated
   preferences, persistent graph scheduling, MIDI parsing, imports, focus
   restoration and representative axe scans.
-- Chromium production-preview flows covering both audio modes, overlap repair,
+- Chromium production-preview flows covering both audio modes, contrast repair,
   mono fallback, shortcut help and fade scheduling as well as transport,
   imports, drawing, explorer operation, MIDI maps and source-point editing.
 - axe in initial, audio-active, holding, error, explorer, point-editor, dark, reduced-motion, forced-colour emulation and narrow states;
@@ -211,7 +223,9 @@ The tested browser engine is Chromium supplied by Playwright. No real screen-rea
 - 200% text-only scaling, 400% browser zoom and increased text spacing.
 - Touch and pen hardware, mobile orientation and largest system text.
 - Sustained, short-preview and on-demand audio alongside screen-reader speech.
-- Curve-benchmark speech in forward, reverse and looped traversal, including
+- Browser Voice over and screen-reader speech together, including cancellation
+  and duplicated-speech checks.
+- Curve-landmark speech in forward, reverse and looped traversal, including
   coincident and constant-axis landmarks.
 - Mono, one-earbud, hearing-device and output-interruption behaviour.
 - Perceptual distinction, spatial movement, sign-cue usefulness, progress-tick

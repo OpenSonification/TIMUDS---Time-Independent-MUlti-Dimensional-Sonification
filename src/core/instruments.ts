@@ -76,7 +76,7 @@ export const INSTRUMENTS: Record<TimbreName, InstrumentDefinition> = {
     filterBaseFrequency: 350,
     filterTracking: 1.3,
     resonance: 0.7,
-    gainCompensation: 0.86,
+    gainCompensation: 1,
     articulation: 'sustained',
     attackSeconds: 0.032,
     decaySeconds: 0,

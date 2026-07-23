@@ -58,9 +58,10 @@ progress = startProgress + (currentAudioTime - startAudioTime) / duration
 Looping applies modulo one. A non-looping result clamps at one and enters holding so the final coordinate remains audible. The animation loop pushes each interpolated point directly to the SVG marker ref and each frequency pair directly to the audio engine. React-visible progress/readouts publish at about 10 Hz. Audio duration therefore does not depend on React or frame count.
 
 The same loop compares each old/new progress pair with the pure benchmark
-table. A crossed benchmark produces one discrete status message. Loop wrapping
-is explicit; coincident extrema are grouped. The app never sends the ordinary
-frame updates to the live region.
+table. A crossed benchmark produces one discrete text status and, when Voice
+over is checked, one English browser-speech utterance. Loop wrapping is
+explicit; coincident extrema are grouped. The app never sends ordinary frame
+updates to either speech path.
 
 Manual movement writes normalised progress directly. Once audio has been deliberately enabled, a manual move sustains its new coordinate and enters holding. Before activation, it remains silent.
 
@@ -128,10 +129,11 @@ The SVG exposes a short title/description, not thousands of points. It combines 
 
 Important discrete events update one polite live region. Coordinates are never
 announced on animation frames. Explorer movement replaces a pending
-announcement after a short idle period. Timed and benchmark announcements each
-require explicit opt-in. A static benchmark list provides the same names and
-coordinates. Native elements supply range, number, selection, disclosure, file,
-table and button semantics.
+announcement after a short idle period. Timed position announcements require
+explicit opt-in. Landmark Voice over starts checked, speaks only after Play and
+is cancelled by every sound-stop route. A static benchmark list provides the
+same names and coordinates. Native elements supply range, number, selection,
+disclosure, file, table and button semantics.
 
 `preferences.ts` validates a versioned, bounded subset of sound and keyboard
 settings before reading or writing local storage. Playback, audio-enabled state,

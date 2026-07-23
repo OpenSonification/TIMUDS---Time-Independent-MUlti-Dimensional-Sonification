@@ -7,10 +7,13 @@ mask one another. It gives X and Y different acoustic jobs: X controls pan and Y
 controls pitch. Axis voices remains available because it works without a
 stereo-dependent data channel and lets listeners compare two explicit voices.
 
-Panning is not the sole identifier in Axis voices. The defaults use different
-timbres and non-overlapping pitch registers, backed by labels and numeric
-readouts. A touching range counts as overlap because the shared boundary can
-still weaken identification.
+Axis voices no longer makes one dimension low and dark while the other is high
+and bright. That approach made X easy to lose on small speakers. Both defaults
+now use the same centred MIDI 60–72 register and matched listening gains. Warm
+organ identifies X and Clarinet-like reed identifies Y, backed by labels and
+numeric readouts. A warning appears only when the same instrument is used
+across overlapping ranges; its repair changes the instruments, not the data
+mapping.
 
 The positive/negative Y timbre cue is optional. Its equal-power crossfade avoids
 a hard discontinuity at zero, while the numeric sign remains the authoritative

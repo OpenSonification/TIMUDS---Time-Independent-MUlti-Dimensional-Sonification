@@ -9,6 +9,7 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { DEFAULT_PREFERENCES, savePreferences } from './core/preferences';
 
 class MockAudioParam {
   value = 0;
@@ -88,11 +89,44 @@ class MockAudioContext {
   close = vi.fn(() => Promise.resolve());
 }
 
+class MockSpeechSynthesisUtterance {
+  lang = '';
+  pitch = 1;
+  rate = 1;
+  text: string;
+  voice: SpeechSynthesisVoice | null = null;
+  volume = 1;
+
+  constructor(text: string) {
+    this.text = text;
+  }
+}
+
+const mockSpeechSpeak = vi.fn();
+const mockSpeechCancel = vi.fn();
+
 function installAudioMock(): void {
   Object.defineProperty(window, 'AudioContext', {
     configurable: true,
     writable: true,
     value: MockAudioContext,
+  });
+}
+
+function installSpeechMock(): void {
+  mockSpeechSpeak.mockClear();
+  mockSpeechCancel.mockClear();
+  Object.defineProperty(window, 'speechSynthesis', {
+    configurable: true,
+    value: {
+      cancel: mockSpeechCancel,
+      getVoices: () => [],
+      speak: mockSpeechSpeak,
+    },
+  });
+  Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+    configurable: true,
+    value: MockSpeechSynthesisUtterance,
   });
 }
 
@@ -137,12 +171,21 @@ beforeEach(() => {
   MockAudioContext.constructions = 0;
   window.localStorage.clear();
   installAudioMock();
+  installSpeechMock();
 });
 
 afterEach(() => {
   Object.defineProperty(window, 'AudioContext', {
     configurable: true,
     writable: true,
+    value: undefined,
+  });
+  Object.defineProperty(window, 'speechSynthesis', {
+    configurable: true,
+    value: undefined,
+  });
+  Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+    configurable: true,
     value: undefined,
   });
 });
@@ -171,6 +214,7 @@ describe('TIMUDS workspace', () => {
     );
     expect(screen.getByLabelText('X coordinate slider')).toBeInTheDocument();
     expect(screen.getByText('Additional keyboard notes')).toBeInTheDocument();
+    expect(mockSpeechSpeak).not.toHaveBeenCalled();
     const ids = [...container.querySelectorAll('[id]')].map(
       (element) => element.id,
     );
@@ -239,38 +283,52 @@ describe('TIMUDS workspace', () => {
     expect(screen.getByLabelText('Progress tick')).toHaveValue('12.5');
     expect(screen.getByLabelText(/Test sound length/)).toHaveValue('2');
     expect(screen.getByLabelText('Test pattern')).toHaveValue('held');
-    expect(
-      screen.getByLabelText('Announce curve benchmarks during playback'),
-    ).not.toBeChecked();
+    expect(screen.getByLabelText('Voice over')).toBeChecked();
     expect(readout.getByText('Y sign').nextElementSibling).toHaveTextContent(
       'Zero',
     );
     expect(screen.queryByRole('group', { name: 'X-axis voice' })).toBeNull();
   });
 
-  it('uses separated Axis voice defaults and offers a one-step overlap repair', async () => {
+  it('uses balanced Axis voice defaults and repairs same-sound overlap', async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByLabelText('Axis voices'));
     const xVoice = screen.getByRole('group', { name: 'X-axis voice' });
     const yVoice = screen.getByRole('group', { name: 'Y-axis voice' });
-    expect(within(xVoice).getByLabelText('Low MIDI note')).toHaveValue(48);
-    expect(within(xVoice).getByLabelText('High MIDI note')).toHaveValue(60);
-    expect(within(yVoice).getByLabelText('Low MIDI note')).toHaveValue(67);
-    expect(within(yVoice).getByLabelText('High MIDI note')).toHaveValue(79);
-
-    fireEvent.change(within(xVoice).getByLabelText('High MIDI note'), {
-      target: { value: '70' },
-    });
+    expect(within(xVoice).getByLabelText('Instrument sound')).toHaveValue(
+      'warm',
+    );
+    expect(within(yVoice).getByLabelText('Instrument sound')).toHaveValue(
+      'reed',
+    );
+    for (const voice of [xVoice, yVoice]) {
+      expect(within(voice).getByLabelText('Low MIDI note')).toHaveValue(60);
+      expect(within(voice).getByLabelText('High MIDI note')).toHaveValue(72);
+      expect(within(voice).getByLabelText(/Listening gain/)).toHaveValue(
+        '0.76',
+      );
+      expect(within(voice).getByLabelText(/Stereo position/)).toHaveValue('0');
+    }
     expect(
-      screen.getByText(/X and Y pitch ranges overlap/i),
+      screen.queryByText(/same instrument across overlapping pitch ranges/i),
+    ).not.toBeInTheDocument();
+
+    await user.selectOptions(
+      within(yVoice).getByLabelText('Instrument sound'),
+      'warm',
+    );
+    expect(
+      screen.getByText(/same instrument across overlapping pitch ranges/i),
     ).toBeInTheDocument();
     await user.click(
-      screen.getByRole('button', { name: 'Restore separated ranges' }),
+      screen.getByRole('button', { name: 'Restore contrasting sounds' }),
     );
-    expect(within(xVoice).getByLabelText('High MIDI note')).toHaveValue(60);
+    expect(within(yVoice).getByLabelText('Instrument sound')).toHaveValue(
+      'reed',
+    );
     expect(
-      screen.queryByText(/X and Y pitch ranges overlap/i),
+      screen.queryByText(/same instrument across overlapping pitch ranges/i),
     ).not.toBeInTheDocument();
   });
 
@@ -332,31 +390,16 @@ describe('TIMUDS workspace', () => {
     ).toBeInTheDocument();
   });
 
-  it('restores validated sound and shortcut preferences without audio state', async () => {
-    const user = userEvent.setup();
-    const first = render(<App />);
-    await user.click(screen.getByLabelText('Axis voices'));
-    await user.selectOptions(
-      screen.getByLabelText('Shortcut scope'),
-      'site-wide',
-    );
-    fireEvent.change(screen.getByLabelText(/Test sound length/), {
-      target: { value: '4' },
+  it('restores validated sound and shortcut preferences without audio state', () => {
+    savePreferences(window.localStorage, {
+      ...DEFAULT_PREFERENCES,
+      sonificationMode: 'axis-voices',
+      shortcutScope: 'site-wide',
+      testSoundDuration: 4,
+      auditionPattern: 'bebop',
+      valueMapping: 'volume',
+      announceBenchmarks: true,
     });
-    await user.selectOptions(screen.getByLabelText('Test pattern'), 'bebop');
-    await user.selectOptions(
-      screen.getByLabelText('What the coordinate value changes'),
-      'volume',
-    );
-    await user.click(
-      screen.getByLabelText('Announce curve benchmarks during playback'),
-    );
-    await waitFor(() =>
-      expect(window.localStorage.getItem('timuds.preferences')).toContain(
-        '"site-wide"',
-      ),
-    );
-    first.unmount();
 
     render(<App />);
     expect(screen.getByLabelText('Axis voices')).toBeChecked();
@@ -366,9 +409,7 @@ describe('TIMUDS workspace', () => {
     expect(
       screen.getByLabelText('What the coordinate value changes'),
     ).toHaveValue('volume');
-    expect(
-      screen.getByLabelText('Announce curve benchmarks during playback'),
-    ).toBeChecked();
+    expect(screen.getByLabelText('Voice over')).toBeChecked();
     expect(MockAudioContext.constructions).toBe(0);
     expect(window.localStorage.getItem('timuds.preferences')).not.toContain(
       '"transport"',
@@ -398,20 +439,27 @@ describe('TIMUDS workspace', () => {
     );
   });
 
-  it('announces discrete curve extrema when benchmark narration is enabled', async () => {
+  it('speaks discrete curve extrema in English when voice over is enabled', async () => {
     const user = userEvent.setup();
     render(<App />);
     expect(screen.getAllByText(/highest Y/i).length).toBeGreaterThan(0);
-    await user.click(
-      screen.getByLabelText('Announce curve benchmarks during playback'),
-    );
+    expect(screen.getByLabelText('Voice over')).toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Play' }));
 
+    expect(mockSpeechSpeak).toHaveBeenCalledOnce();
+    expect(mockSpeechSpeak.mock.calls[0]?.[0]).toMatchObject({
+      lang: 'en-GB',
+      text: 'Highest X coordinate. X 1. Y 0.',
+    });
     expect(
       screen.getAllByText(
         /Curve benchmark: highest X, the rightmost point at X 1, Y 0/i,
       ).length,
     ).toBeGreaterThan(0);
+
+    await user.click(screen.getByLabelText('Voice over'));
+    expect(screen.getByLabelText('Voice over')).not.toBeChecked();
+    expect(mockSpeechCancel).toHaveBeenCalled();
   });
 
   it('opens shortcut help, restores focus and leaves editable controls alone', async () => {

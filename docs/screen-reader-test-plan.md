@@ -40,7 +40,7 @@ Use the production build. Start with a fresh page and system output at a low lev
 13. Load a valid MIDI file into X. Confirm the status identifies the filename, distinct-note count, note-on event count, track count and pitch range. Review the palette, confirm the low/high range is disabled with an explanation, then remove the map.
 14. Load a malformed `.mid` file into Y. Confirm its inline alert is associated with the Y file input, the existing X configuration is unaffected and no sound starts.
 15. Activate Enable audio. Expected meaning: “Audio enabled. No sound is playing.”
-16. Review the curve-benchmark list, enable benchmark announcements, then activate Play. Confirm the initial and subsequently crossed extrema are announced once and match the listed coordinates. Use Hold, Stop all sound and Reset traversal; confirm each state is available as static text and announced once.
+16. Review the curve-landmark list and confirm Voice over is checked beside Play. Activate Play. Confirm the initial and subsequently crossed extrema are spoken in English and match the listed coordinates. Check for duplicate browser and screen-reader speech. Untick Voice over if necessary. Use Hold, Stop all sound and Reset traversal; confirm queued browser speech stops and each state remains available as static text.
 17. Operate Position along curve with native range commands. Expected meaning at one quarter: “Position along curve, slider, 25 percent”, allowing product-specific phrasing.
 18. Use Step backwards and Step forwards. Confirm the announcement follows the selected detail level and does not move focus.
 19. Enter two-dimensional exploration. Expected meaning: “Keyboard exploration started. Arrow keys change x and y. The curve will not change. Press Escape to return.”
@@ -83,9 +83,9 @@ Exact punctuation, ordering and voice-engine phrasing may differ. Meaning must r
 4. Select Coordinates and sound values, then Full position details. Confirm
    each level adds the current pitches, volume percentages, brightness
    multipliers or pulse rates as appropriate.
-5. Start timed playback with both timed and benchmark announcements Off. Confirm no coordinate stream occurs.
+5. Untick Voice over and start timed playback with timed announcements Off. Confirm no coordinate stream or browser landmark speech occurs.
 6. Test 1-, 2-, 5- and 10-second playback intervals. Confirm older messages do not make controls unusable.
-7. Leave timed announcements Off, enable benchmark announcements and play Circle forwards, backwards and looped. Confirm highest/lowest X and Y are discrete messages rather than frame updates. Repeat with Constant X and Constant Y.
+7. Leave timed announcements Off, check Voice over and play Circle forwards, backwards and looped. Confirm highest/lowest X and Y are discrete English phrases rather than frame updates. Repeat with Constant X and Constant Y.
 8. Confirm routine statuses never move focus. Confirm only import failure uses the alert path.
 
 ## Screen reader and sonification together

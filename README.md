@@ -30,8 +30,8 @@ The default circle demonstrates why this matters. Its x coordinate repeatedly ri
 - Five original local test patterns: held note, bebop-style run, boogie bass,
   son-clave pulse and 3:2 hemiola.
 - Independent local Standard MIDI File note-map import for X and Y.
-- Separated default Axis registers, overlap repair, stereo-width and explicit
-  mono-compatible controls.
+- Matched, centred Axis registers with contrasting default instruments,
+  per-axis calibration and explicit mono-compatible controls.
 - Configurable progress ticks and guarded workspace or site-wide keyboard
   commands.
 - Responsive SVG, concise numeric/state readout, collapsed technical details
@@ -100,8 +100,10 @@ mapping family to both: X changes the X voice and Y changes the Y voice. Pitch
 uses the configured registers. Volume runs from 10% to 100% of each listening
 gain. Tone brightness opens or closes each voice filter. Pulse rate runs from
 0.75 to 8 Hz. The three non-pitch mappings hold each voice at its configured
-midpoint note. X defaults to MIDI 48–60 at −0.65 pan; Y defaults to MIDI 67–79
-at +0.65 pan.
+midpoint note. X and Y both default to the clearly audible MIDI 60–72 range,
+the same listening gain and centred output. X uses Warm organ and Y uses
+Clarinet-like reed, so timbre identifies the axis rather than loudness,
+register or stereo position.
 
 Each axis has its own data domain. Automatic mode uses that axis’s minimum and
 maximum in the current curve. Manual mode accepts an explicit domain.
@@ -143,10 +145,11 @@ scheduled voice and cue changes, fades to silence over 120 ms and retains
 position. Progress ticks can be Off or sound every 25%, 12.5% or 10%. Direct
 seeks are silent and delayed frames do not create catch-up storms.
 
-Optional curve-benchmark narration speaks the first arrival at the lowest and
-highest X and Y values. Coincident extrema are grouped into one message. The
-calculated coordinates also appear as ordinary text, and the option starts off
-to avoid unsolicited speech.
+The checked **Voice over** control beside Play uses an installed English browser
+voice to speak the first arrival at the lowest and highest X and Y values.
+Coincident extrema are grouped into one phrase. Unticking it cancels queued
+speech; Hold, Stop all sound and Reset do the same. The calculated coordinates
+also appear as ordinary text.
 
 ## Keyboard controls
 

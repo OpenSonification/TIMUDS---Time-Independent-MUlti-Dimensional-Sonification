@@ -9,7 +9,7 @@ import type {
 } from './types';
 
 export const PREFERENCES_KEY = 'timuds.preferences';
-export const PREFERENCES_VERSION = 1;
+export const PREFERENCES_VERSION = 3;
 
 export interface AxisPreference {
   timbre: TimbreName;
@@ -54,13 +54,18 @@ export const DEFAULT_PREFERENCES: TimudsPreferences = {
   progressCueVolume: 0.12,
   testSoundDuration: 2,
   auditionPattern: 'held',
-  announceBenchmarks: false,
+  announceBenchmarks: true,
   visibleStep: 0.01,
   axes: {
-    x: { timbre: 'warm', lowMidi: 48, highMidi: 60, pan: -0.65 },
-    y: { timbre: 'reed', lowMidi: 67, highMidi: 79, pan: 0.65 },
+    x: { timbre: 'warm', lowMidi: 60, highMidi: 72, pan: 0 },
+    y: { timbre: 'reed', lowMidi: 60, highMidi: 72, pan: 0 },
   },
 };
+
+const LEGACY_DEFAULT_AXES = {
+  x: { timbre: 'warm', lowMidi: 48, highMidi: 60, pan: -0.65 },
+  y: { timbre: 'reed', lowMidi: 67, highMidi: 79, pan: 0.65 },
+} as const;
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -103,13 +108,37 @@ function axisPreference(
   };
 }
 
+function matchesAxisPreference(
+  value: unknown,
+  expected: AxisPreference,
+): boolean {
+  return (
+    isRecord(value) &&
+    value.timbre === expected.timbre &&
+    value.lowMidi === expected.lowMidi &&
+    value.highMidi === expected.highMidi &&
+    value.pan === expected.pan
+  );
+}
+
 export function validatePreferences(value: unknown): TimudsPreferences {
   if (
     !isRecord(value) ||
-    value.version !== PREFERENCES_VERSION ||
+    ![1, 2, PREFERENCES_VERSION].includes(value.version as number) ||
     !isRecord(value.axes)
   )
     return structuredClone(DEFAULT_PREFERENCES);
+
+  const hasLegacyAxisDefaults =
+    value.version === 1 &&
+    matchesAxisPreference(value.axes.x, LEGACY_DEFAULT_AXES.x) &&
+    matchesAxisPreference(value.axes.y, LEGACY_DEFAULT_AXES.y);
+  const axes = hasLegacyAxisDefaults
+    ? structuredClone(DEFAULT_PREFERENCES.axes)
+    : {
+        x: axisPreference(value.axes.x, DEFAULT_PREFERENCES.axes.x),
+        y: axisPreference(value.axes.y, DEFAULT_PREFERENCES.axes.y),
+      };
 
   const modes: SonificationMode[] = ['spatial', 'axis-voices'];
   const valueMappings: ValueMapping[] = [
@@ -183,15 +212,13 @@ export function validatePreferences(value: unknown): TimudsPreferences {
       ? (value.auditionPattern as AuditionPatternName)
       : DEFAULT_PREFERENCES.auditionPattern,
     announceBenchmarks:
+      value.version === PREFERENCES_VERSION &&
       typeof value.announceBenchmarks === 'boolean'
         ? value.announceBenchmarks
         : DEFAULT_PREFERENCES.announceBenchmarks,
     visibleStep:
       value.visibleStep === 0.1 ? 0.1 : DEFAULT_PREFERENCES.visibleStep,
-    axes: {
-      x: axisPreference(value.axes.x, DEFAULT_PREFERENCES.axes.x),
-      y: axisPreference(value.axes.y, DEFAULT_PREFERENCES.axes.y),
-    },
+    axes,
   };
 }
 

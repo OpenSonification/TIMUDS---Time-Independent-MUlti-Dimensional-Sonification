@@ -71,10 +71,68 @@ describe('versioned preferences', () => {
       stereoWidth: 0.75,
       testSoundDuration: 2,
       auditionPattern: 'held',
-      announceBenchmarks: false,
+      announceBenchmarks: true,
       valueMapping: 'pitch',
       shortcutScope: 'workspace',
       axes: { x: DEFAULT_PREFERENCES.axes.x },
+    });
+  });
+
+  it('moves the original Axis defaults into the balanced audible register', () => {
+    expect(
+      validatePreferences({
+        ...DEFAULT_PREFERENCES,
+        version: 1,
+        axes: {
+          x: { timbre: 'warm', lowMidi: 48, highMidi: 60, pan: -0.65 },
+          y: { timbre: 'reed', lowMidi: 67, highMidi: 79, pan: 0.65 },
+        },
+      }),
+    ).toMatchObject({
+      version: 3,
+      axes: {
+        x: { timbre: 'warm', lowMidi: 60, highMidi: 72, pan: 0 },
+        y: { timbre: 'reed', lowMidi: 60, highMidi: 72, pan: 0 },
+      },
+    });
+
+    expect(
+      validatePreferences({
+        ...DEFAULT_PREFERENCES,
+        version: 1,
+        axes: {
+          x: { timbre: 'warm', lowMidi: 40, highMidi: 52, pan: -0.4 },
+          y: { timbre: 'flute', lowMidi: 67, highMidi: 79, pan: 0.4 },
+        },
+      }),
+    ).toMatchObject({
+      version: 3,
+      axes: {
+        x: { timbre: 'warm', lowMidi: 40, highMidi: 52, pan: -0.4 },
+        y: { timbre: 'flute', lowMidi: 67, highMidi: 79, pan: 0.4 },
+      },
+    });
+  });
+
+  it('enables the new audible landmark voice over for older preferences', () => {
+    expect(
+      validatePreferences({
+        ...DEFAULT_PREFERENCES,
+        version: 2,
+        announceBenchmarks: false,
+      }),
+    ).toMatchObject({
+      version: 3,
+      announceBenchmarks: true,
+    });
+    expect(
+      validatePreferences({
+        ...DEFAULT_PREFERENCES,
+        announceBenchmarks: false,
+      }),
+    ).toMatchObject({
+      version: 3,
+      announceBenchmarks: false,
     });
   });
 

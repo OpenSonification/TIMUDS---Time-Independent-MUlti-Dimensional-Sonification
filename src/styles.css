@@ -612,6 +612,33 @@ h3 {
   margin-bottom: 1.6rem;
 }
 
+.transport-voice-over {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--ink);
+  padding: 0.62rem 0.9rem;
+  background: var(--paper-raised);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.015em;
+  cursor: pointer;
+}
+
+.transport-voice-over input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  accent-color: var(--y);
+}
+
+.transport-voice-over:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .seek-block {
   border: 1px solid var(--rule-dark);
   padding: 1.25rem;

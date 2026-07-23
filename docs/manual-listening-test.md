@@ -112,10 +112,24 @@ messages are too verbose, whether Stop is easy to find, whether site-wide
 arrows interfere with reading commands, whether workspace scope is easier, and
 whether mono-compatible mode is understandable.
 
-Enable curve-benchmark narration. Test Circle, Triangle, Constant X and Constant
-Y forwards, backwards and with looping. Confirm extrema are spoken when crossed,
-coincident extrema produce one message, loop seams do not create a queue, and
-speech remains understandable over the selected instrument.
+Leave Voice over checked. Test Circle, Triangle, Constant X and Constant Y
+forwards, backwards and with looping. Confirm extrema are spoken in English
+when crossed, coincident extrema produce one phrase, loop seams do not create a
+queue, and speech remains understandable over the selected instrument. Confirm
+Hold, Stop all sound, Reset and unticking Voice over cancel queued speech.
 
 Automated unit, axe and browser tests may verify scheduling and operation, but
 they do not complete this protocol.
+
+## Axis balance
+
+Select Axis voices and leave X as Warm organ and Y as Clarinet-like reed. Use
+Test X, Test Y, Hear low, Hear middle and Hear high at the default listening
+gain. Repeat with laptop speakers, ordinary headphones and mono-compatible
+output.
+
+Both axes should remain easy to hear throughout MIDI 60–72. Neither should
+sound like a foreground voice while the other feels incidental. The
+instruments should identify X and Y even when both coordinates produce the same
+note. Record the device, comfortable master volume and any point at which one
+voice masks the other; this remains a perceptual manual check.

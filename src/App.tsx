@@ -13,6 +13,7 @@ import {
   webAudioSupported,
   type AudioFrame,
 } from './audio/AudioEngine';
+import { VoiceOver, voiceOverSupported } from './audio/VoiceOver';
 import { AxisControls } from './components/AxisControls';
 import { CurvePlot, type CurvePlotHandle } from './components/CurvePlot';
 import { SourcePointEditor } from './components/SourcePointEditor';
@@ -52,6 +53,7 @@ import { readMidiNoteMap } from './core/midi';
 import {
   DEFAULT_PREFERENCES,
   loadPreferences,
+  PREFERENCES_VERSION,
   savePreferences,
   type TimudsPreferences,
 } from './core/preferences';
@@ -100,14 +102,14 @@ const DEFAULT_AXES: AxisConfig[] = [
     timbre: 'warm',
     automaticDomain: true,
     manualDomain: { minimum: -1, maximum: 1 },
-    lowMidi: 48,
-    highMidi: 60,
+    lowMidi: 60,
+    highMidi: 72,
     midiNoteMap: null,
     inverted: false,
-    gain: 0.72,
+    gain: 0.76,
     muted: false,
     solo: false,
-    pan: -0.65,
+    pan: 0,
   },
   {
     key: 'y',
@@ -115,14 +117,14 @@ const DEFAULT_AXES: AxisConfig[] = [
     timbre: 'reed',
     automaticDomain: true,
     manualDomain: { minimum: -1, maximum: 1 },
-    lowMidi: 67,
-    highMidi: 79,
+    lowMidi: 60,
+    highMidi: 72,
     midiNoteMap: null,
     inverted: false,
-    gain: 0.64,
+    gain: 0.76,
     muted: false,
     solo: false,
-    pan: 0.65,
+    pan: 0,
   },
 ];
 
@@ -145,6 +147,15 @@ const BENCHMARK_LABELS: Record<CurveBenchmarkKind, string> = {
   'highest-y': 'highest Y',
   'constant-x': 'X is constant',
   'constant-y': 'Y is constant',
+};
+
+const BENCHMARK_VOICE_LABELS: Record<CurveBenchmarkKind, string> = {
+  'lowest-x': 'Lowest X coordinate',
+  'highest-x': 'Highest X coordinate',
+  'lowest-y': 'Lowest Y coordinate',
+  'highest-y': 'Highest Y coordinate',
+  'constant-x': 'X coordinate is constant',
+  'constant-y': 'Y coordinate is constant',
 };
 
 const VALUE_MAPPING_LABELS: Record<ValueMapping, string> = {
@@ -198,6 +209,15 @@ function benchmarkAnnouncement(benchmark: CurveBenchmark): string {
       ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`
       : labels[0];
   return `Curve benchmark: ${joined} at X ${formatNumber(benchmark.point.x)}, Y ${formatNumber(benchmark.point.y)}.`;
+}
+
+function benchmarkVoiceOver(benchmark: CurveBenchmark): string {
+  const labels = benchmark.kinds.map((kind) => BENCHMARK_VOICE_LABELS[kind]);
+  const joined =
+    labels.length > 1
+      ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`
+      : labels[0];
+  return `${joined}. X ${formatNumber(benchmark.point.x)}. Y ${formatNumber(benchmark.point.y)}.`;
 }
 
 function clampProgress(value: number): number {
@@ -318,6 +338,8 @@ export function App() {
   );
   const [audioAvailable] = useState(() => webAudioSupported());
   const [engine] = useState(() => new AudioEngine());
+  const [voiceOver] = useState(() => new VoiceOver());
+  const [voiceOverAvailable] = useState(() => voiceOverSupported());
   const [curve, setCurve] = useState<CurveData>(DEFAULT_CURVE);
   const [originalCurve, setOriginalCurve] = useState<CurveData>(DEFAULT_CURVE);
   const [selectedPreset, setSelectedPreset] = useState<PresetName>('Circle');
@@ -674,7 +696,7 @@ export function App() {
       ]),
     ) as TimudsPreferences['axes'];
     const preferences: TimudsPreferences = {
-      version: 1,
+      version: PREFERENCES_VERSION,
       sonificationMode,
       progressCueInterval: progressCueSetting,
       shortcutScope,
@@ -793,6 +815,7 @@ export function App() {
       }
       if (benchmarkMessage) {
         setAnnouncement(benchmarkMessage);
+        voiceOver.speak(crossedBenchmarks.map(benchmarkVoiceOver).join(' '));
       } else if (playbackAnnouncementInterval !== 'off') {
         const interval = Number(playbackAnnouncementInterval);
         const announcementIndex = Math.floor(result.elapsed / interval);
@@ -842,6 +865,7 @@ export function App() {
     stereoWidth,
     transport.status,
     valueMapping,
+    voiceOver,
     ySignCue,
   ]);
 
@@ -940,9 +964,10 @@ export function App() {
       for (const timer of auditionTimerRefs.current) window.clearTimeout(timer);
       if (explorerAnnouncementTimerRef.current !== null)
         window.clearTimeout(explorerAnnouncementTimerRef.current);
+      voiceOver.cancel();
       void engine.close();
     },
-    [engine],
+    [engine, voiceOver],
   );
 
   function frameForPoint(point: Point, frameAxes = axes): AudioFrame {
@@ -1026,6 +1051,7 @@ export function App() {
   }
 
   function setProgress(next: number, announce = false): void {
+    voiceOver.cancel();
     const progress = clampProgress(next);
     progressRef.current = progress;
     lastCueProgressRef.current = progress;
@@ -1082,6 +1108,7 @@ export function App() {
     if (!audioAvailable) return;
     try {
       clearPreviewTimer();
+      voiceOver.cancel();
       await engine.enable();
       setAudioEnabled(true);
       if (explorerActive) {
@@ -1139,6 +1166,8 @@ export function App() {
           ? `${playingMessage} ${benchmarkAnnouncement(startingBenchmark)}`
           : playingMessage,
       );
+      if (startingBenchmark)
+        voiceOver.speak(benchmarkVoiceOver(startingBenchmark));
     } catch {
       engine.stopAllSound();
       setAudioSounding(false);
@@ -1151,6 +1180,7 @@ export function App() {
 
   function hold(): void {
     if (transport.status !== 'playing') return;
+    voiceOver.cancel();
     dispatch({ type: 'SEEK', progress: progressRef.current });
     dispatch({ type: 'HOLD' });
     setAnnouncement(`Holding at ${(progressRef.current * 100).toFixed(1)}%.`);
@@ -1158,6 +1188,7 @@ export function App() {
 
   function stopAllSound(message = 'Sound stopped at the current point.'): void {
     clearPreviewTimer();
+    voiceOver.cancel();
     engine.stopAllSound(STOP_FADE_SECONDS);
     setAudioSounding(false);
     lastCueProgressRef.current = progressRef.current;
@@ -1169,6 +1200,16 @@ export function App() {
 
   function stopSound(message = 'Sound stopped at the current point.'): void {
     stopAllSound(message);
+  }
+
+  function changeVoiceOver(enabled: boolean): void {
+    setAnnounceBenchmarks(enabled);
+    if (!enabled) voiceOver.cancel();
+    setAnnouncement(
+      enabled
+        ? 'Voice over is on. Curve landmarks will be spoken during playback.'
+        : 'Voice over is off.',
+    );
   }
 
   function openKeyboardHelp(target: EventTarget | null): void {
@@ -1243,26 +1284,28 @@ export function App() {
     }
   }
 
-  function restoreSeparatedRanges(): void {
-    stopAllSound('Restoring pitch ranges stopped all sound.');
-    midiRequestRef.current.x += 1;
-    midiRequestRef.current.y += 1;
-    setMidiErrors({ x: '', y: '' });
+  function restoreContrastingSounds(): void {
+    stopAllSound('Restoring contrasting sounds stopped all sound.');
     setAxes((current) =>
-      current.map((axis) => ({
-        ...axis,
-        lowMidi: DEFAULT_PREFERENCES.axes[axis.key].lowMidi,
-        highMidi: DEFAULT_PREFERENCES.axes[axis.key].highMidi,
-        midiNoteMap: null,
-      })),
+      current.map((axis) => {
+        const defaults = DEFAULT_AXES.find(
+          (candidate) => candidate.key === axis.key,
+        );
+        return {
+          ...axis,
+          timbre: DEFAULT_PREFERENCES.axes[axis.key].timbre,
+          gain: defaults?.gain ?? axis.gain,
+        };
+      }),
     );
     setAnnouncement(
-      'Separated pitch ranges restored: X MIDI 48 to 60 and Y MIDI 67 to 79.',
+      'Contrasting sounds restored: X uses Warm organ and Y uses Clarinet-like reed at matched listening gains.',
     );
   }
 
   function resetToStart(): void {
     clearPreviewTimer();
+    voiceOver.cancel();
     engine.stopAllSound(STOP_FADE_SECONDS);
     setAudioSounding(false);
     progressRef.current = 0;
@@ -1700,6 +1743,7 @@ export function App() {
     setMasterVolume(0.18);
     setAnnouncementDetail('coordinates');
     setPlaybackAnnouncementInterval('off');
+    setAnnounceBenchmarks(DEFAULT_PREFERENCES.announceBenchmarks);
     setFollowStep(DEFAULT_PREFERENCES.visibleStep);
     setExplorerActive(false);
     setWasdEnabled(false);
@@ -2167,6 +2211,18 @@ export function App() {
                   ? 'Resume'
                   : 'Play'}
               </button>
+              <label className="transport-voice-over">
+                <input
+                  type="checkbox"
+                  checked={announceBenchmarks}
+                  disabled={!voiceOverAvailable}
+                  aria-describedby="voice-over-help"
+                  onChange={(event) =>
+                    changeVoiceOver(event.currentTarget.checked)
+                  }
+                />{' '}
+                Voice over
+              </label>
               <button
                 type="button"
                 onClick={hold}
@@ -2193,7 +2249,7 @@ export function App() {
                 Keyboard help
               </button>
             </div>
-            <p className="fine-print">
+            <p id="voice-over-help" className="fine-print">
               Audio engine:{' '}
               {!audioAvailable
                 ? 'unavailable in this browser'
@@ -2201,6 +2257,9 @@ export function App() {
                   ? 'enabled'
                   : 'not enabled'}
               . Enable audio prepares the synthesiser without making sound.
+              {voiceOverAvailable
+                ? ' Voice over uses an installed English browser voice for the highest and lowest X and Y landmarks.'
+                : ' This browser has no speech synthesis, so voice over is unavailable; the landmark list and text announcements remain available.'}
             </p>
             <div className="seek-block">
               <label htmlFor="seek">Position along curve</label>
@@ -2356,25 +2415,14 @@ export function App() {
                   <option value="5">Every 5 seconds</option>
                   <option value="10">Every 10 seconds</option>
                 </select>
-                <label className="full-row">
-                  <input
-                    type="checkbox"
-                    checked={announceBenchmarks}
-                    aria-describedby="benchmark-announcement-help"
-                    onChange={(event) =>
-                      setAnnounceBenchmarks(event.currentTarget.checked)
-                    }
-                  />{' '}
-                  Announce curve benchmarks during playback
-                </label>
                 <div
                   id="benchmark-announcement-help"
                   className="fine-print full-row"
                 >
                   <p>
-                    Announces each first arrival at the lowest and highest X and
-                    Y values. Shared extrema are spoken together. Current
-                    benchmarks:
+                    Voice over announces each first arrival at the lowest and
+                    highest X and Y values. Shared extrema are spoken together.
+                    Current benchmarks:
                   </p>
                   <ul>
                     {benchmarks.map((benchmark) => (
@@ -2395,10 +2443,11 @@ export function App() {
                 therefore take longer to pass.
               </p>
               <p className="fine-print">
-                Playback announcements are off by default. The current-position
-                section remains available as ordinary text. Escape stops active
-                audio unless a form control or dialog has the immediate claim to
-                that key.
+                Timed position announcements are off by default. Landmark voice
+                over starts on and can be unticked beside Play. The
+                current-position section remains available as ordinary text.
+                Escape stops active audio unless a form control or dialog has
+                the immediate claim to that key.
               </p>
             </details>
           </section>
@@ -2978,21 +3027,27 @@ export function App() {
                   </div>
                 ) : (
                   <>
-                    {valueMapping === 'pitch' && rangesOverlap && (
-                      <div className="warning range-warning" role="note">
-                        <p>
-                          The X and Y pitch ranges overlap, so the two voices
-                          may be harder to tell apart.
-                        </p>
-                        <button
-                          type="button"
-                          className="button-secondary"
-                          onClick={restoreSeparatedRanges}
-                        >
-                          Restore separated ranges
-                        </button>
-                      </div>
-                    )}
+                    <p className="fine-print">
+                      X and Y start in the same C4–C5 range and at the same
+                      level. Their instruments tell them apart.
+                    </p>
+                    {valueMapping === 'pitch' &&
+                      rangesOverlap &&
+                      axisConfigs.x.timbre === axisConfigs.y.timbre && (
+                        <div className="warning range-warning" role="note">
+                          <p>
+                            X and Y use the same instrument across overlapping
+                            pitch ranges, so the two voices may blend together.
+                          </p>
+                          <button
+                            type="button"
+                            className="button-secondary"
+                            onClick={restoreContrastingSounds}
+                          >
+                            Restore contrasting sounds
+                          </button>
+                        </div>
+                      )}
                     <div className="axis-grid">
                       {axes.map((axis) => (
                         <AxisControls
