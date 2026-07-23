@@ -27,6 +27,19 @@ import {
   prepareDrawnPath,
 } from './core/geometry';
 import {
+  AUDITION_PATTERNS,
+  AUDITION_PATTERN_OPTIONS,
+  scaleAuditionPattern,
+  type AuditionPatternName,
+  type AuditionNote,
+} from './core/auditionPatterns';
+import {
+  crossedCurveBenchmarks,
+  curveBenchmarks as findCurveBenchmarks,
+  type CurveBenchmark,
+  type CurveBenchmarkKind,
+} from './core/curveBenchmarks';
+import {
   explorationDomain,
   explorerSteps,
   moveExplorerPoint,
@@ -119,6 +132,24 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-GB', { maximumSignificantDigits: 7 }).format(
     value,
   );
+}
+
+const BENCHMARK_LABELS: Record<CurveBenchmarkKind, string> = {
+  'lowest-x': 'lowest X, the leftmost point',
+  'highest-x': 'highest X, the rightmost point',
+  'lowest-y': 'lowest Y',
+  'highest-y': 'highest Y',
+  'constant-x': 'X is constant',
+  'constant-y': 'Y is constant',
+};
+
+function benchmarkAnnouncement(benchmark: CurveBenchmark): string {
+  const labels = benchmark.kinds.map((kind) => BENCHMARK_LABELS[kind]);
+  const joined =
+    labels.length > 1
+      ? `${labels.slice(0, -1).join(', ')} and ${labels.at(-1)}`
+      : labels[0];
+  return `Curve benchmark: ${joined} at X ${formatNumber(benchmark.point.x)}, Y ${formatNumber(benchmark.point.y)}.`;
 }
 
 function clampProgress(value: number): number {
@@ -278,6 +309,12 @@ export function App() {
   const [progressCueVolume, setProgressCueVolume] = useState(
     initialPreferences.progressCueVolume,
   );
+  const [testSoundDuration, setTestSoundDuration] = useState(
+    initialPreferences.testSoundDuration,
+  );
+  const [auditionPattern, setAuditionPattern] = useState<AuditionPatternName>(
+    initialPreferences.auditionPattern,
+  );
   const [shortcutScope, setShortcutScope] = useState<ShortcutScope>(
     initialPreferences.shortcutScope,
   );
@@ -291,6 +328,9 @@ export function App() {
     useState<AnnouncementDetail>('coordinates');
   const [playbackAnnouncementInterval, setPlaybackAnnouncementInterval] =
     useState<PlaybackAnnouncementInterval>('off');
+  const [announceBenchmarks, setAnnounceBenchmarks] = useState(
+    initialPreferences.announceBenchmarks,
+  );
   const [followStep, setFollowStep] = useState<0.01 | 0.1>(
     initialPreferences.visibleStep,
   );
@@ -321,7 +361,10 @@ export function App() {
   const playbackStartProgressRef = useRef(0);
   const lastVisualUpdateRef = useRef(0);
   const lastPlaybackAnnouncementRef = useRef(-1);
+  const lastBenchmarkProgressRef = useRef(0);
   const previewTimerRef = useRef<number | null>(null);
+  const auditionTimerRefs = useRef<number[]>([]);
+  const calibrationActiveRef = useRef(false);
   const explorerAnnouncementTimerRef = useRef<number | null>(null);
   const savedTraversalProgressRef = useRef(0);
   const lastExplorerKeyTimeRef = useRef(0);
@@ -333,6 +376,17 @@ export function App() {
   const geometry = useMemo(
     () => buildCurveGeometry(curve.points, closed),
     [closed, curve.points],
+  );
+  const benchmarks = useMemo(
+    () =>
+      findCurveBenchmarks(
+        curve.points,
+        closed,
+        parameterisation,
+        reverse,
+        geometry,
+      ),
+    [closed, curve.points, geometry, parameterisation, reverse],
   );
   const automaticDomains = useMemo(
     () => ({
@@ -500,6 +554,9 @@ export function App() {
       ySignCue,
       spatialTimbre,
       progressCueVolume,
+      testSoundDuration,
+      auditionPattern,
+      announceBenchmarks,
       visibleStep: followStep,
       axes: persistedAxes,
     };
@@ -509,6 +566,8 @@ export function App() {
     );
   }, [
     axes,
+    auditionPattern,
+    announceBenchmarks,
     followStep,
     monoCompatible,
     progressCueSetting,
@@ -518,11 +577,13 @@ export function App() {
     sonificationMode,
     spatialTimbre,
     stereoWidth,
+    testSoundDuration,
     ySignCue,
   ]);
 
   useEffect(() => {
-    if (audioEnabled && audioSounding) engine.applyFrame(audioFrame);
+    if (audioEnabled && audioSounding && !calibrationActiveRef.current)
+      engine.applyFrame(audioFrame);
   }, [audioEnabled, audioFrame, audioSounding, engine]);
 
   useEffect(() => {
@@ -581,11 +642,25 @@ export function App() {
       }
       lastCueProgressRef.current = result.progress;
       lastAnimationTimeRef.current = now;
+      const crossedBenchmarks = announceBenchmarks
+        ? crossedCurveBenchmarks(
+            lastBenchmarkProgressRef.current,
+            result.progress,
+            benchmarks,
+            loop,
+          )
+        : [];
+      lastBenchmarkProgressRef.current = result.progress;
+      const benchmarkMessage = crossedBenchmarks
+        .map(benchmarkAnnouncement)
+        .join(' ');
       if (now - lastVisualUpdateRef.current > 100 || result.completed) {
         lastVisualUpdateRef.current = now;
         dispatch({ type: 'SEEK', progress: result.progress });
       }
-      if (playbackAnnouncementInterval !== 'off') {
+      if (benchmarkMessage) {
+        setAnnouncement(benchmarkMessage);
+      } else if (playbackAnnouncementInterval !== 'off') {
         const interval = Number(playbackAnnouncementInterval);
         const announcementIndex = Math.floor(result.elapsed / interval);
         if (
@@ -600,7 +675,11 @@ export function App() {
       }
       if (result.completed) {
         dispatch({ type: 'COMPLETE' });
-        setAnnouncement('Playback finished. The final point is sounding.');
+        setAnnouncement(
+          benchmarkMessage
+            ? `${benchmarkMessage} Playback finished. The final point is sounding.`
+            : 'Playback finished. The final point is sounding.',
+        );
         return;
       }
       frameId = requestAnimationFrame(animate);
@@ -609,7 +688,9 @@ export function App() {
     return () => cancelAnimationFrame(frameId);
   }, [
     activeDomains,
+    announceBenchmarks,
     axes,
+    benchmarks,
     closed,
     curve.points,
     duration,
@@ -722,6 +803,7 @@ export function App() {
     () => () => {
       if (previewTimerRef.current !== null)
         window.clearTimeout(previewTimerRef.current);
+      for (const timer of auditionTimerRefs.current) window.clearTimeout(timer);
       if (explorerAnnouncementTimerRef.current !== null)
         window.clearTimeout(explorerAnnouncementTimerRef.current);
       void engine.close();
@@ -778,12 +860,16 @@ export function App() {
       window.clearTimeout(previewTimerRef.current);
       previewTimerRef.current = null;
     }
+    for (const timer of auditionTimerRefs.current) window.clearTimeout(timer);
+    auditionTimerRefs.current = [];
+    calibrationActiveRef.current = false;
   }
 
   function setProgress(next: number, announce = false): void {
     const progress = clampProgress(next);
     progressRef.current = progress;
     lastCueProgressRef.current = progress;
+    lastBenchmarkProgressRef.current = progress;
     lastAnimationTimeRef.current = 0;
     dispatch({ type: 'SEEK', progress });
     const point = interpolateCurve(
@@ -856,15 +942,23 @@ export function App() {
       playbackStartTimeRef.current = engine.currentTime;
       lastPlaybackAnnouncementRef.current = 0;
       lastCueProgressRef.current = start;
+      lastBenchmarkProgressRef.current = start;
       lastAnimationTimeRef.current = performance.now();
       plotRef.current?.setCurrentPoint(startPoint);
       engine.startSound(frameForPoint(startPoint));
       setAudioSounding(true);
       dispatch({ type: 'PLAY' });
-      setAnnouncement(
+      const playingMessage =
         sonificationMode === 'spatial'
           ? 'Playing. X controls stereo position and Y controls pitch.'
-          : 'Playing the separate X and Y voices.',
+          : 'Playing the separate X and Y voices.';
+      const startingBenchmark = announceBenchmarks
+        ? benchmarks.find(({ progress }) => Math.abs(progress - start) < 1e-9)
+        : undefined;
+      setAnnouncement(
+        startingBenchmark
+          ? `${playingMessage} ${benchmarkAnnouncement(startingBenchmark)}`
+          : playingMessage,
       );
     } catch {
       engine.stopAllSound();
@@ -1135,16 +1229,62 @@ export function App() {
         muted: key !== 'both' && axis.key !== key,
         solo: false,
       }));
-      engine.startSound(frameForPoint(point, previewAxes));
+      const baseFrame = frameForPoint(point, previewAxes);
+      const pattern = scaleAuditionPattern(
+        AUDITION_PATTERNS[auditionPattern],
+        testSoundDuration,
+      );
+      const frameForNote = (note: AuditionNote): AudioFrame => {
+        const ratio = 2 ** ((note.midi - 60) / 12);
+        if (baseFrame.mode === 'spatial') {
+          return {
+            ...baseFrame,
+            frequency: baseFrame.frequency * ratio,
+            ySignCue: false,
+          };
+        }
+        return {
+          ...baseFrame,
+          frequencies: {
+            x: baseFrame.frequencies.x * ratio,
+            y: baseFrame.frequencies.y * ratio,
+          },
+        };
+      };
+      const playNote = (note: AuditionNote) => {
+        engine.startSound(frameForNote(note), {
+          struckPreviewDurationSeconds: note.durationSeconds,
+        });
+      };
+      calibrationActiveRef.current = true;
+      for (const [index, note] of pattern.notes.entries()) {
+        if (index === 0 && note.startSeconds === 0) {
+          playNote(note);
+        } else {
+          auditionTimerRefs.current.push(
+            window.setTimeout(() => playNote(note), note.startSeconds * 1000),
+          );
+        }
+        const releaseAt = note.startSeconds + note.durationSeconds;
+        if (releaseAt < pattern.durationSeconds - 0.01) {
+          auditionTimerRefs.current.push(
+            window.setTimeout(
+              () => engine.releaseTestSound(),
+              releaseAt * 1000,
+            ),
+          );
+        }
+      }
       setAudioSounding(true);
       dispatch({ type: 'STOP' });
       setAnnouncement(
-        `${key === 'both' ? 'Both voices' : `${key.toUpperCase()} voice`} playing for calibration.`,
+        `${key === 'both' ? 'Both voices' : `${key.toUpperCase()} voice`} playing ${AUDITION_PATTERNS[auditionPattern].label} for ${testSoundDuration.toFixed(1)} seconds.`,
       );
       previewTimerRef.current = window.setTimeout(() => {
         stopAllSound('Calibration sound finished.');
-      }, 900);
+      }, testSoundDuration * 1000);
     } catch {
+      calibrationActiveRef.current = false;
       setAudioSounding(false);
       dispatch({ type: 'ERROR' });
       setAnnouncement('The calibration sound could not be started.');
@@ -1930,6 +2070,38 @@ export function App() {
                   <option value="5">Every 5 seconds</option>
                   <option value="10">Every 10 seconds</option>
                 </select>
+                <label className="full-row">
+                  <input
+                    type="checkbox"
+                    checked={announceBenchmarks}
+                    aria-describedby="benchmark-announcement-help"
+                    onChange={(event) =>
+                      setAnnounceBenchmarks(event.currentTarget.checked)
+                    }
+                  />{' '}
+                  Announce curve benchmarks during playback
+                </label>
+                <div
+                  id="benchmark-announcement-help"
+                  className="fine-print full-row"
+                >
+                  <p>
+                    Announces each first arrival at the lowest and highest X and
+                    Y values. Shared extrema are spoken together. Current
+                    benchmarks:
+                  </p>
+                  <ul>
+                    {benchmarks.map((benchmark) => (
+                      <li key={benchmark.id}>
+                        {benchmark.kinds
+                          .map((kind) => BENCHMARK_LABELS[kind])
+                          .join('; ')}
+                        : X {formatNumber(benchmark.point.x)}, Y{' '}
+                        {formatNumber(benchmark.point.y)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
               <p className="fine-print">
                 Arc length gives constant spatial speed. Uniform segment
@@ -2341,6 +2513,51 @@ export function App() {
                       setMasterVolume(event.currentTarget.valueAsNumber)
                     }
                   />
+                  <label htmlFor="test-sound-duration">
+                    Test sound length: {testSoundDuration.toFixed(1)} seconds
+                  </label>
+                  <input
+                    id="test-sound-duration"
+                    type="range"
+                    min="0.5"
+                    max="5"
+                    step="0.5"
+                    value={testSoundDuration}
+                    aria-describedby="test-sound-duration-help"
+                    onChange={(event) =>
+                      setTestSoundDuration(event.currentTarget.valueAsNumber)
+                    }
+                  />
+                  <p
+                    id="test-sound-duration-help"
+                    className="fine-print full-row"
+                  >
+                    Applies to Test sound and the X/Y low, middle, high and test
+                    buttons. Longer settings let drum and mallet sounds ring;
+                    curve playback is unchanged.
+                  </p>
+                  <label htmlFor="audition-pattern">Test pattern</label>
+                  <select
+                    id="audition-pattern"
+                    value={auditionPattern}
+                    aria-describedby="audition-pattern-help"
+                    onChange={(event) =>
+                      setAuditionPattern(
+                        event.currentTarget.value as AuditionPatternName,
+                      )
+                    }
+                  >
+                    {AUDITION_PATTERN_OPTIONS.map((pattern) => (
+                      <option key={pattern.value} value={pattern.value}>
+                        {pattern.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p id="audition-pattern-help" className="fine-print full-row">
+                    {AUDITION_PATTERNS[auditionPattern].description} These are
+                    original local test patterns, not imported recordings or
+                    copies of third-party MIDI files.
+                  </p>
                   <label>
                     <input
                       type="checkbox"

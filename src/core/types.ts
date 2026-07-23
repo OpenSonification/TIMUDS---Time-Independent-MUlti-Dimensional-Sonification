@@ -27,7 +27,13 @@ export type TimbreName =
   | 'trumpet'
   | 'strings'
   | 'mallet'
-  | 'drum';
+  | 'drum'
+  | 'sub-bass'
+  | 'arcade'
+  | 'air-jet'
+  | 'siren'
+  | 'robot'
+  | 'pluck';
 
 export interface MidiNoteMap {
   fileName: string;

@@ -31,9 +31,15 @@ Pitch functions normalise, clamp, optionally invert and convert MIDI to hertz. W
 
 `sonification.ts` owns X-to-pan mapping, Spatial and Axis mode point mapping,
 range-overlap detection and the equal-power Y-sign blend. `instruments.ts` is
-the pure catalogue for ten synthetic choices. Each definition supplies a
-visible label and description plus harmonics, pitch-tracked filter,
-articulation, vibrato and level-compensation parameters.
+the pure catalogue for sixteen synthetic choices. Each definition supplies a
+visible label and description plus harmonics, carrier level, pitch-tracked
+filter, articulation, vibrato and level-compensation parameters.
+
+`auditionPatterns.ts` holds the original note/rest patterns and scales them to a
+bounded 0.5–5 second preview. `curveBenchmarks.ts` derives the first
+traversal-order visit to each axis extremum. Its calculation follows closure,
+direction and the selected parameterisation without changing source-point
+order.
 
 ## Timing and transport
 
@@ -48,6 +54,11 @@ progress = startProgress + (currentAudioTime - startAudioTime) / duration
 ```
 
 Looping applies modulo one. A non-looping result clamps at one and enters holding so the final coordinate remains audible. The animation loop pushes each interpolated point directly to the SVG marker ref and each frequency pair directly to the audio engine. React-visible progress/readouts publish at about 10 Hz. Audio duration therefore does not depend on React or frame count.
+
+The same loop compares each old/new progress pair with the pure benchmark
+table. A crossed benchmark produces one discrete status message. Loop wrapping
+is explicit; coincident extrema are grouped. The app never sends the ordinary
+frame updates to the live region.
 
 Manual movement writes normalised progress directly. Once audio has been deliberately enabled, a manual move sustains its new coordinate and enters holding. Before activation, it remains silent.
 
@@ -66,11 +77,11 @@ One `AudioEngine` owns the lifecycle:
 ```text
 X modulation oscillator → modulation depth → X carrier detune
 X secondary oscillator → layer gain ┐
-X carrier oscillator ───────────────┴→ X filter ┐
+X carrier oscillator → carrier gain ┴→ X filter ┐
 noise source → X texture filter → texture gain ┴→ X articulation → X gain → X panner ┐
                                                                                      ├→ master → compressor → destination
 noise source → Y texture filter → texture gain ┬→ Y articulation → Y gain → Y panner ┘
-Y carrier oscillator ───────────────┬→ Y filter ┘
+Y carrier oscillator → carrier gain ┬→ Y filter ┘
 Y secondary oscillator → layer gain ┘
 Y modulation oscillator → modulation depth → Y carrier detune
 noise source → high-pass filter → cue gain ──────────────────────────────────────────┘
@@ -85,6 +96,11 @@ inharmonic and filtered-noise layers provide larger categorical differences;
 attack, decay and vibrato separate behaviour over time. Pure tone uses sine.
 Frequency, filter, modulation, layer, texture, voice gain, panning and master
 gain use bounded smoothing.
+
+Test patterns are scheduled by the application after a deliberate calibration
+action. Each note reuses `updateMapping`; each rest calls a short
+`releaseTestSound` fade. Stop and all normal cancellation routes clear the
+pending timers.
 
 `progressCues.ts` detects threshold crossings without audio or UI state. Direct
 seeks are silent, loop wraps are explicit and call sites cap scheduling after
@@ -103,7 +119,12 @@ The SVG exposes a short title/description, not thousands of points. It combines 
 
 `SourcePointEditor` provides a paginated native table and ordinary form controls for add, update, duplicate, delete and reorder operations. `TwoDimensionalExplorer` supplies one narrowly scoped focusable controller plus native x/y alternatives. Neither component owns audio nodes.
 
-Important discrete events update one polite live region. Coordinates are never announced on animation frames. Explorer movement replaces a pending announcement after a short idle period. Timed announcements require an explicit interval. Native elements supply range, number, selection, disclosure, file, table and button semantics.
+Important discrete events update one polite live region. Coordinates are never
+announced on animation frames. Explorer movement replaces a pending
+announcement after a short idle period. Timed and benchmark announcements each
+require explicit opt-in. A static benchmark list provides the same names and
+coordinates. Native elements supply range, number, selection, disclosure, file,
+table and button semantics.
 
 `preferences.ts` validates a versioned, bounded subset of sound and keyboard
 settings before reading or writing local storage. Playback, audio-enabled state,

@@ -19,7 +19,11 @@ Detailed evidence:
 - Silent initial state. Enable audio prepares the graph without sounding it. Play, Hear and calibration are deliberate sound actions.
 - Persistent Stop all sound, low initial master gain and one shared 120 ms cancellation/fade path.
 - Spatial voice maps X to pan and Y to pitch; Axis voices adds distinct timbres and separated registers. Mono-compatible output preserves both dimensions with centred Axis voices.
-- Ten independently selectable synthetic timbres with visible descriptions and named calibration controls.
+- Sixteen independently selectable synthetic timbres with visible
+  descriptions, named calibration controls and a persisted 0.5–5 second
+  test-sound length.
+- Five original, locally generated test patterns with a visible selector and
+  descriptions. Changing the pattern or instrument remains silent.
 - Separate native MIDI file inputs for X and Y, bounded local parsing, associated inline errors, a readable note-palette summary and a remove action.
 - A concise visible coordinate/progress/state readout available without audio or the SVG, with notes, frequencies and engine state in Technical details.
 - Configurable progress ticks with the native slider and percentage as non-audio equivalents. Ticks are never live-announced.
@@ -29,7 +33,9 @@ Detailed evidence:
 - Optional WASD, off by default and active only on the focused controller.
 - Point-by-point curve editing, deletion and reordering without drawing or dragging.
 - Focused import-error summary linked to preserved invalid input with line or item information where possible.
-- One polite live status for discrete messages. Timed announcements are off by default. Rapid explorer messages replace a pending message after a short idle period.
+- One polite live status for discrete messages. Timed and curve-benchmark
+  announcements are off by default. Rapid explorer messages replace a pending
+  message after a short idle period.
 - Light and dark schemes, reduced-motion handling, forced-colour rules and narrow single-column reflow.
 - A concise SVG description with detailed data available outside the image.
 
@@ -86,6 +92,19 @@ S and Escape use the same fade when focus is outside controls and dialogs.
 Reset, curve/mode changes, previews, explorer exits and page hiding also use the
 common cancellation/fade path.
 
+**Test sound length** defaults to 2 seconds and applies only to the main Test
+sound button and the X/Y calibration buttons. Struck sounds use a
+duration-aware decay during those tests, so a drum remains audible without
+changing the short articulation used to follow a curve. The native range is
+keyboard-operable and exposes its value in seconds. Stop all sound can end a
+test before its timer.
+
+**Test pattern** chooses a held note, bebop-style run, boogie bass pattern,
+son-clave pulse or 3:2 hemiola. These are original local note sequences rather
+than recordings or copied MIDI files. Each is scaled to the selected test
+length, and rests fade the preview. The instrument and phrase selectors never
+start sound by themselves.
+
 ## Screen-reader and audio coexistence
 
 The explorer provides:
@@ -98,7 +117,17 @@ Moving focus away from the controller fades a sustained explorer preview. Timed 
 
 Announcement detail can be Off, Coordinates only, Coordinates and pitches, or Full position details. Coordinates only is the initial manual-movement setting. Timed playback announcements are initially Off and may be set to 1, 2, 5 or 10 seconds.
 
-The current-position section is static navigable text, not a live region. During playback React publishes it at a controlled rate of about ten times per second while the audio clock remains authoritative. Animation frames are never announced.
+Curve-benchmark narration is a separate opt-in setting. During playback it
+announces the first crossing of the lowest and highest X and Y source-point
+values; shared extrema form one message. Constant axes receive one constant-axis
+message. The current curve's benchmark names and exact coordinates are listed
+beside the setting before sound or speech is enabled.
+
+The current-position section is static navigable text, not a live region.
+During playback React publishes it at a controlled rate of about ten times per
+second while the audio clock remains authoritative. Animation frames are never
+announced; only a user-selected timed interval or a crossed benchmark can
+produce playback speech.
 
 ## Visual and numeric alternatives
 
@@ -115,6 +144,7 @@ sound state. Its Technical details and the Curve summary additionally expose:
 - mute and solo state for each voice;
 - selected instrument and continuous or imported MIDI pitch source for each voice;
 - point count, coordinate ranges and curve length.
+- current curve-benchmark names and coordinates.
 
 The source-point table exposes individual coordinates and segment information. X/Y text labels, different marker shapes, solid/dashed treatments, timbre differences and state words supplement colour and stereo cues.
 
@@ -164,9 +194,11 @@ The tested browser engine is Chromium supplied by Playwright. No real screen-rea
 - 200% text-only scaling, 400% browser zoom and increased text spacing.
 - Touch and pen hardware, mobile orientation and largest system text.
 - Sustained, short-preview and on-demand audio alongside screen-reader speech.
+- Curve-benchmark speech in forward, reverse and looped traversal, including
+  coincident and constant-axis landmarks.
 - Mono, one-earbud, hearing-device and output-interruption behaviour.
 - Perceptual distinction, spatial movement, sign-cue usefulness, progress-tick
-  comfort and every sustained, mallet and pitched-drum pairing. See
+  comfort, audition-pattern clarity and every synthetic voice pairing. See
   [manual-listening-test.md](manual-listening-test.md).
 - MIDI note-map naming, error and pitch-palette output with each listed screen reader.
 - Testing by disabled participants.

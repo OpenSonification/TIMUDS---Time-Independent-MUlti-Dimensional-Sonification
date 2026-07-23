@@ -256,7 +256,7 @@ describe('persistent audio engine', () => {
     expect(context.filters[0]!.type).toBe('highpass');
     expect(context.oscillators[2]!.setPeriodicWave).toHaveBeenCalled();
     expect(context.gains[4]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      0.22,
+      0.35,
       4,
       expect.any(Number),
     );
@@ -275,20 +275,20 @@ describe('persistent audio engine', () => {
       context.oscillators[1]!.frequency.setTargetAtTime,
     ).toHaveBeenLastCalledWith(5, 4, expect.any(Number));
     expect(context.gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      24,
+      42,
       4,
       expect.any(Number),
     );
     expect(context.gains[2]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
       1,
       4,
-      0.11,
+      0.18,
     );
     expect(
       context.oscillators[2]!.detune.setTargetAtTime,
-    ).toHaveBeenLastCalledWith(13, 4, expect.any(Number));
+    ).toHaveBeenLastCalledWith(24, 4, expect.any(Number));
     expect(context.gains[5]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      0.025,
+      0.06,
       4,
       expect.any(Number),
     );
@@ -318,7 +318,7 @@ describe('persistent audio engine', () => {
       context.oscillators[1]!.frequency.setTargetAtTime,
     ).toHaveBeenLastCalledWith(440 * 3.73, 4, expect.any(Number));
     expect(context.gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      240,
+      340,
       4,
       expect.any(Number),
     );
@@ -329,7 +329,34 @@ describe('persistent audio engine', () => {
     engine.applyFrame({ ...frame, timbre: 'flute' });
     expect(context.filters[1]!.type).toBe('highpass');
     expect(context.gains[5]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
-      0.045,
+      0.12,
+      4,
+      expect.any(Number),
+    );
+    expect(context.gains[6]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0.55,
+      4,
+      expect.any(Number),
+    );
+
+    engine.applyFrame({ ...frame, timbre: 'air-jet' });
+    expect(context.gains[5]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0.3,
+      4,
+      expect.any(Number),
+    );
+    expect(context.gains[6]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0.14,
+      4,
+      expect.any(Number),
+    );
+
+    engine.applyFrame({ ...frame, timbre: 'robot' });
+    expect(
+      context.oscillators[1]!.frequency.setTargetAtTime,
+    ).toHaveBeenLastCalledWith(440 * 1.414, 4, expect.any(Number));
+    expect(context.gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      480,
       4,
       expect.any(Number),
     );
@@ -358,16 +385,50 @@ describe('persistent audio engine', () => {
 
     expect(
       context.oscillators[0]!.frequency.setValueAtTime,
-    ).toHaveBeenCalledWith(440 * 2 ** (750 / 1200), 4);
+    ).toHaveBeenCalledWith(440 * 2 ** (1100 / 1200), 4);
     expect(
       context.oscillators[0]!.frequency.exponentialRampToValueAtTime,
-    ).toHaveBeenCalledWith(440, 4.08);
+    ).toHaveBeenCalledWith(440, 4.1);
     expect(
       context.oscillators[2]!.frequency.exponentialRampToValueAtTime,
-    ).toHaveBeenCalledWith(220, 4.08);
+    ).toHaveBeenCalledWith(220, 4.1);
     expect(
       context.gains[2]!.gain.exponentialRampToValueAtTime,
-    ).toHaveBeenCalledWith(0.0001, 4.122);
+    ).toHaveBeenCalledWith(0.0001, 4.162);
+  });
+
+  it('keeps a struck sound audible across a requested calibration length', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+
+    engine.startSound(
+      {
+        mode: 'spatial',
+        frequency: 440,
+        pan: 0,
+        timbre: 'drum',
+        ySignCue: false,
+        signBlend: {
+          sign: 'positive',
+          negativeGain: 0,
+          positiveGain: 1,
+          transitionWidth: 0.05,
+        },
+        masterVolume: 0.18,
+        monoCompatible: false,
+      },
+      { struckPreviewDurationSeconds: 2 },
+    );
+
+    expect(context.gains[2]!.gain.setTargetAtTime).toHaveBeenCalledWith(
+      0.0001,
+      4.002,
+      2 / 2.6,
+    );
+    expect(
+      context.gains[2]!.gain.exponentialRampToValueAtTime,
+    ).not.toHaveBeenCalled();
   });
 
   it('uses the cue path and cancels every scheduled path on stop', async () => {
@@ -388,6 +449,12 @@ describe('persistent audio engine', () => {
       4 + PROGRESS_TICK_SECONDS,
     );
 
+    engine.releaseTestSound();
+    expect(context.gains[3]!.gain.setTargetAtTime).toHaveBeenCalledWith(
+      0,
+      4,
+      0.012,
+    );
     engine.stopAllSound();
     const master = context.gains[0]!.gain;
     expect(master.cancelScheduledValues).toHaveBeenCalledWith(4);

@@ -11,9 +11,11 @@ export const PAN_SMOOTHING_SECONDS = 0.045;
 export const TIMBRE_CROSSFADE_SECONDS = 0.075;
 export const STOP_FADE_SECONDS = 0.12;
 export const PROGRESS_TICK_SECONDS = 0.032;
+const STRUCK_PREVIEW_DECAY_DIVISOR = 2.6;
 
 interface Voice {
   oscillator: OscillatorNode;
+  carrierGain: GainNode;
   modulator: OscillatorNode;
   vibratoDepth: GainNode;
   secondaryOscillator: OscillatorNode;
@@ -51,6 +53,10 @@ export interface SpatialAudioFrame extends BaseAudioFrame {
 }
 
 export type AudioFrame = AxisVoicesAudioFrame | SpatialAudioFrame;
+
+export interface StartSoundOptions {
+  struckPreviewDurationSeconds?: number;
+}
 
 const AXES: AxisKey[] = ['x', 'y'];
 
@@ -150,7 +156,9 @@ export class AudioEngine {
       const secondaryGain = context.createGain();
       const textureFilter = context.createBiquadFilter();
       const textureGain = context.createGain();
+      const carrierGain = context.createGain();
       oscillator.frequency.value = 220;
+      carrierGain.gain.value = 1;
       modulator.type = 'sine';
       modulator.frequency.value = 5;
       vibratoDepth.gain.value = 0;
@@ -167,6 +175,7 @@ export class AudioEngine {
       articulation.gain.value = 1;
       gain.gain.value = 0;
       oscillator
+        .connect(carrierGain)
         .connect(filter)
         .connect(articulation)
         .connect(gain)
@@ -183,6 +192,7 @@ export class AudioEngine {
       secondaryOscillator.start();
       this.voices.set(axis, {
         oscillator,
+        carrierGain,
         modulator,
         vibratoDepth,
         secondaryOscillator,
@@ -220,7 +230,11 @@ export class AudioEngine {
     this.progressGain = progressGain;
   }
 
-  applyFrame(frame: AudioFrame, forceArticulation = false): void {
+  applyFrame(
+    frame: AudioFrame,
+    forceArticulation = false,
+    struckPreviewDurationSeconds?: number,
+  ): void {
     const context = this.context;
     if (!context) return;
     if (frame.mode === 'axis-voices') {
@@ -234,6 +248,7 @@ export class AudioEngine {
           audible ? config.gain * 0.34 : 0,
           frame.monoCompatible ? 0 : config.pan,
           forceArticulation,
+          struckPreviewDurationSeconds,
         );
       }
     } else {
@@ -246,6 +261,7 @@ export class AudioEngine {
           frame.signBlend.negativeGain * 0.31,
           pan,
           forceArticulation,
+          struckPreviewDurationSeconds,
         );
         this.applyVoice(
           'y',
@@ -254,6 +270,7 @@ export class AudioEngine {
           frame.signBlend.positiveGain * 0.31,
           pan,
           forceArticulation,
+          struckPreviewDurationSeconds,
         );
       } else {
         this.applyVoice(
@@ -263,6 +280,7 @@ export class AudioEngine {
           0.34,
           pan,
           forceArticulation,
+          struckPreviewDurationSeconds,
         );
         this.applyVoice(
           'y',
@@ -271,6 +289,7 @@ export class AudioEngine {
           0,
           pan,
           forceArticulation,
+          struckPreviewDurationSeconds,
         );
       }
     }
@@ -291,6 +310,7 @@ export class AudioEngine {
     gain: number,
     pan: number,
     forceArticulation: boolean,
+    struckPreviewDurationSeconds?: number,
   ): void {
     if (!this.context) return;
     const voice = this.voices.get(key);
@@ -306,6 +326,7 @@ export class AudioEngine {
       forceArticulation || timbreChanged,
       forceArticulation || timbreChanged || pitchChanged,
       frequency,
+      struckPreviewDurationSeconds,
     );
     if (this.context.currentTime >= voice.pitchEnvelopeUntil) {
       voice.oscillator.frequency.setTargetAtTime(
@@ -336,6 +357,11 @@ export class AudioEngine {
     );
     voice.filter.frequency.setTargetAtTime(
       instrumentFilterFrequency(definition, frequency),
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.carrierGain.gain.setTargetAtTime(
+      definition.carrierGain,
       this.context.currentTime,
       TIMBRE_CROSSFADE_SECONDS,
     );
@@ -415,6 +441,7 @@ export class AudioEngine {
     onset: boolean,
     strike: boolean,
     frequency: number,
+    struckPreviewDurationSeconds?: number,
   ): void {
     if (!this.context) return;
     const now = this.context.currentTime;
@@ -432,10 +459,25 @@ export class AudioEngine {
     parameter.cancelScheduledValues(now);
     parameter.setValueAtTime(0.0001, now);
     parameter.linearRampToValueAtTime(1, now + definition.attackSeconds);
-    parameter.exponentialRampToValueAtTime(
-      0.0001,
-      now + definition.attackSeconds + definition.decaySeconds,
-    );
+    if (struckPreviewDurationSeconds === undefined) {
+      parameter.exponentialRampToValueAtTime(
+        0.0001,
+        now + definition.attackSeconds + definition.decaySeconds,
+      );
+    } else {
+      const previewDuration = Math.min(
+        5,
+        Math.max(0.5, struckPreviewDurationSeconds),
+      );
+      parameter.setTargetAtTime(
+        0.0001,
+        now + definition.attackSeconds,
+        Math.max(
+          definition.decaySeconds,
+          previewDuration / STRUCK_PREVIEW_DECAY_DIVISOR,
+        ),
+      );
+    }
     if (definition.pitchDropCents <= 0) return;
     voice.oscillator.frequency.cancelScheduledValues(now);
     voice.oscillator.frequency.setValueAtTime(
@@ -459,9 +501,9 @@ export class AudioEngine {
     voice.pitchEnvelopeUntil = now + definition.pitchDropSeconds;
   }
 
-  startSound(frame: AudioFrame): void {
+  startSound(frame: AudioFrame, options: StartSoundOptions = {}): void {
     this.sounding = true;
-    this.applyFrame(frame, true);
+    this.applyFrame(frame, true, options.struckPreviewDurationSeconds);
   }
 
   triggerProgressCue(volume: number, completion = false): void {
@@ -478,12 +520,22 @@ export class AudioEngine {
     parameter.exponentialRampToValueAtTime(0.0001, now + duration);
   }
 
+  releaseTestSound(): void {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    for (const voice of this.voices.values()) {
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setTargetAtTime(0, now, 0.012);
+    }
+  }
+
   stopAllSound(fadeSeconds = STOP_FADE_SECONDS): void {
     this.sounding = false;
     if (!this.context || !this.master) return;
     const now = this.context.currentTime;
     for (const voice of this.voices.values()) {
       voice.oscillator.frequency.cancelScheduledValues(now);
+      voice.carrierGain.gain.cancelScheduledValues(now);
       voice.modulator.frequency.cancelScheduledValues(now);
       voice.vibratoDepth.gain.cancelScheduledValues(now);
       voice.secondaryOscillator.frequency.cancelScheduledValues(now);

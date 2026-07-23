@@ -25,6 +25,9 @@ describe('versioned preferences', () => {
       sonificationMode: 'axis-voices',
       shortcutScope: 'site-wide',
       stereoWidth: 0.5,
+      testSoundDuration: 4,
+      auditionPattern: 'bebop',
+      announceBenchmarks: true,
       axes: {
         ...DEFAULT_PREFERENCES.axes,
         x: { ...DEFAULT_PREFERENCES.axes.x, lowMidi: 40 },
@@ -34,6 +37,9 @@ describe('versioned preferences', () => {
       sonificationMode: 'axis-voices',
       shortcutScope: 'site-wide',
       stereoWidth: 0.5,
+      testSoundDuration: 4,
+      auditionPattern: 'bebop',
+      announceBenchmarks: true,
       axes: { x: { lowMidi: 40 } },
     });
     const stored = JSON.parse(storage.value ?? '{}') as Record<string, unknown>;
@@ -49,6 +55,9 @@ describe('versioned preferences', () => {
       validatePreferences({
         ...DEFAULT_PREFERENCES,
         stereoWidth: 99,
+        testSoundDuration: 99,
+        auditionPattern: 'copyrighted-song',
+        announceBenchmarks: 'yes',
         shortcutScope: 'everywhere',
         axes: {
           x: { timbre: 'sample', lowMidi: -1, highMidi: 500, pan: -5 },
@@ -57,6 +66,9 @@ describe('versioned preferences', () => {
       }),
     ).toMatchObject({
       stereoWidth: 0.75,
+      testSoundDuration: 2,
+      auditionPattern: 'held',
+      announceBenchmarks: false,
       shortcutScope: 'workspace',
       axes: { x: DEFAULT_PREFERENCES.axes.x },
     });

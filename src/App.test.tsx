@@ -234,6 +234,11 @@ describe('TIMUDS workspace', () => {
     expect(screen.getByLabelText(/Stereo width/)).toHaveValue('0.75');
     expect(screen.getByLabelText(/Blend hollow and bright/)).toBeChecked();
     expect(screen.getByLabelText('Progress tick')).toHaveValue('12.5');
+    expect(screen.getByLabelText(/Test sound length/)).toHaveValue('2');
+    expect(screen.getByLabelText('Test pattern')).toHaveValue('held');
+    expect(
+      screen.getByLabelText('Announce curve benchmarks during playback'),
+    ).not.toBeChecked();
     expect(readout.getByText('Y sign').nextElementSibling).toHaveTextContent(
       'Zero',
     );
@@ -285,6 +290,13 @@ describe('TIMUDS workspace', () => {
       screen.getByLabelText('Shortcut scope'),
       'site-wide',
     );
+    fireEvent.change(screen.getByLabelText(/Test sound length/), {
+      target: { value: '4' },
+    });
+    await user.selectOptions(screen.getByLabelText('Test pattern'), 'bebop');
+    await user.click(
+      screen.getByLabelText('Announce curve benchmarks during playback'),
+    );
     await waitFor(() =>
       expect(window.localStorage.getItem('timuds.preferences')).toContain(
         '"site-wide"',
@@ -295,10 +307,54 @@ describe('TIMUDS workspace', () => {
     render(<App />);
     expect(screen.getByLabelText('Axis voices')).toBeChecked();
     expect(screen.getByLabelText('Shortcut scope')).toHaveValue('site-wide');
+    expect(screen.getByLabelText(/Test sound length/)).toHaveValue('4');
+    expect(screen.getByLabelText('Test pattern')).toHaveValue('bebop');
+    expect(
+      screen.getByLabelText('Announce curve benchmarks during playback'),
+    ).toBeChecked();
     expect(MockAudioContext.constructions).toBe(0);
     expect(window.localStorage.getItem('timuds.preferences')).not.toContain(
       '"transport"',
     );
+  });
+
+  it('uses the chosen duration for instrument test sounds', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.selectOptions(screen.getByLabelText('Voice sound'), 'drum');
+    await user.selectOptions(screen.getByLabelText('Test pattern'), 'bebop');
+    fireEvent.change(screen.getByLabelText(/Test sound length/), {
+      target: { value: '3.5' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Test sound' }));
+
+    expect(
+      screen.getAllByText(
+        /Both voices playing Bebop-style run for 3\.5 seconds/,
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(MockAudioContext.constructions).toBe(1);
+    await waitFor(() =>
+      expect(window.localStorage.getItem('timuds.preferences')).toContain(
+        '"testSoundDuration":3.5',
+      ),
+    );
+  });
+
+  it('announces discrete curve extrema when benchmark narration is enabled', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    expect(screen.getAllByText(/highest Y/i).length).toBeGreaterThan(0);
+    await user.click(
+      screen.getByLabelText('Announce curve benchmarks during playback'),
+    );
+    await user.click(screen.getByRole('button', { name: 'Play' }));
+
+    expect(
+      screen.getAllByText(
+        /Curve benchmark: highest X, the rightmost point at X 1, Y 0/i,
+      ).length,
+    ).toBeGreaterThan(0);
   });
 
   it('opens shortcut help, restores focus and leaves editable controls alone', async () => {
@@ -454,13 +510,13 @@ describe('TIMUDS workspace', () => {
     );
     await user.selectOptions(
       within(yVoice).getByLabelText('Instrument sound'),
-      'drum',
+      'robot',
     );
     expect(within(xVoice).getByLabelText('Instrument sound')).toHaveValue(
       'trumpet',
     );
     expect(within(yVoice).getByLabelText('Instrument sound')).toHaveValue(
-      'drum',
+      'robot',
     );
 
     await user.upload(

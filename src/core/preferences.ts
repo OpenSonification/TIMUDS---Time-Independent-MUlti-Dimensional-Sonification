@@ -1,4 +1,5 @@
 import { INSTRUMENTS } from './instruments';
+import type { AuditionPatternName } from './auditionPatterns';
 import type {
   ProgressCueInterval,
   ShortcutScope,
@@ -27,6 +28,9 @@ export interface TimudsPreferences {
   ySignCue: boolean;
   spatialTimbre: TimbreName;
   progressCueVolume: number;
+  testSoundDuration: number;
+  auditionPattern: AuditionPatternName;
+  announceBenchmarks: boolean;
   visibleStep: 0.01 | 0.1;
   axes: {
     x: AxisPreference;
@@ -45,6 +49,9 @@ export const DEFAULT_PREFERENCES: TimudsPreferences = {
   ySignCue: true,
   spatialTimbre: 'warm',
   progressCueVolume: 0.12,
+  testSoundDuration: 2,
+  auditionPattern: 'held',
+  announceBenchmarks: false,
   visibleStep: 0.01,
   axes: {
     x: { timbre: 'warm', lowMidi: 48, highMidi: 60, pan: -0.65 },
@@ -104,6 +111,13 @@ export function validatePreferences(value: unknown): TimudsPreferences {
   const modes: SonificationMode[] = ['spatial', 'axis-voices'];
   const cueIntervals: ProgressCueInterval[] = ['off', '25', '12.5', '10'];
   const scopes: ShortcutScope[] = ['off', 'workspace', 'site-wide'];
+  const auditionPatterns: AuditionPatternName[] = [
+    'held',
+    'bebop',
+    'boogie',
+    'clave',
+    'hemiola',
+  ];
   return {
     version: PREFERENCES_VERSION,
     sonificationMode: modes.includes(value.sonificationMode as SonificationMode)
@@ -145,6 +159,21 @@ export function validatePreferences(value: unknown): TimudsPreferences {
       0.3,
       DEFAULT_PREFERENCES.progressCueVolume,
     ),
+    testSoundDuration: numberInRange(
+      value.testSoundDuration,
+      0.5,
+      5,
+      DEFAULT_PREFERENCES.testSoundDuration,
+    ),
+    auditionPattern: auditionPatterns.includes(
+      value.auditionPattern as AuditionPatternName,
+    )
+      ? (value.auditionPattern as AuditionPatternName)
+      : DEFAULT_PREFERENCES.auditionPattern,
+    announceBenchmarks:
+      typeof value.announceBenchmarks === 'boolean'
+        ? value.announceBenchmarks
+        : DEFAULT_PREFERENCES.announceBenchmarks,
     visibleStep:
       value.visibleStep === 0.1 ? 0.1 : DEFAULT_PREFERENCES.visibleStep,
     axes: {

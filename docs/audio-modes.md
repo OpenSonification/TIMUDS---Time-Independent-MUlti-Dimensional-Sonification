@@ -63,10 +63,26 @@ are smoothed.
 
 The instrument choices differ in more than harmonic balance. Their profiles
 also select octave or inharmonic layers, filtered noise, attack or struck
-decay, pitch-tracked filters and vibrato. The strings use a detuned layer, the
-flute adds breath texture, the mallet uses audio-rate inharmonic modulation and
-the pitched drum combines impact noise with a short downward bend. All profiles
-still use local synthesis inside the same persistent graph.
+decay, carrier level, pitch-tracked filters and vibrato. Some are deliberately
+exaggerated: the deep pulse is sub-heavy, the arcade voice is square and
+stepped, the air jet is mostly noise, the siren has a wide pitch sweep, the
+robot growl uses heavy frequency modulation and the pluck has a sharp transient.
+The strings use a detuned layer, the flute adds breath texture, the mallet uses
+audio-rate inharmonic modulation and the pitched drum combines impact noise
+with a short downward bend. All sixteen profiles still use local synthesis
+inside the same persistent graph.
+
+Test sound length is independently adjustable from 0.5 to 5 seconds and
+defaults to 2 seconds. It controls the main and per-axis calibration timers.
+For mallet and drum choices it also stretches the test envelope enough to hear
+the decay. Timed traversal and manual curve movement retain the instrument's
+normal articulation.
+
+Test pattern offers a held note and four original MIDI-style phrases: a
+bebop-style run, boogie bass pattern, son-clave pulse and 3:2 hemiola. Note and
+rest times scale to the chosen test length. A phrase demonstrates repeated
+attacks and register changes; it does not replace the selected instrument or
+turn an uploaded MIDI note map into a sequencer.
 
 Every stop route calls the same `AudioEngine.stopAllSound` method. It cancels
 pending automation for voices and cues, then ramps the master gain to silence

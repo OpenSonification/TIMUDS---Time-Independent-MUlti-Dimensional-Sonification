@@ -49,14 +49,22 @@ distinguishable. Repeat with mono-compatible output.
 ## Instrument separation
 
 Use **Test sound** at one unchanged coordinate and compare every instrument at
-the same master level. Confirm that:
+the same master level. Start with the default 2-second test length, then repeat
+the drum and mallet at 0.5 and 5 seconds. Confirm that:
 
 - Pure sine tone stays neutral and steady;
 - Warm organ is rounder than Bright synthesiser;
 - Clarinet-like reed sounds narrower and woodier than Flute-like;
 - Trumpet-like brass attacks faster than Bowed-string-like;
 - Mallet-like rings longer than Pitched drum;
-- Pitched drum has a clear downward bend.
+- Pitched drum has a clear downward bend;
+- Drum remains audible across the chosen test and stops at its end.
+- Deep sub pulse is unmistakably lower and heavier than Warm organ;
+- Arcade square wave has a hard electronic edge;
+- Air-jet whistle is dominated by breath noise;
+- Alarm siren has an obvious pitch sweep;
+- Robot FM growl has coarse metallic modulation;
+- Sharp plucked string has an immediate transient and fast decay.
 
 Then change instruments in an unpredictable order without looking at the
 selector. Check that the sound family can be identified before reading its
@@ -65,6 +73,13 @@ spectra are technically different.
 
 Repeat on headphones, laptop speakers and mono output. Record any pair that is
 hard to distinguish, any large loudness jump and any uncomfortable resonance.
+Confirm that changing test length does not alter timed curve playback.
+
+Repeat the blind comparison with Held note, Bebop-style run, Boogie bass
+pattern, Son-clave pulse and 3:2 hemiola. Confirm every pattern stops at the
+chosen duration, rests are audible as rests, and repeated notes re-trigger drum,
+mallet and pluck attacks. Record whether any phrase makes two instruments harder
+to tell apart.
 
 ## Progress cues
 
@@ -80,6 +95,11 @@ With speech active, record whether sustained audio masks speech, whether status
 messages are too verbose, whether Stop is easy to find, whether site-wide
 arrows interfere with reading commands, whether workspace scope is easier, and
 whether mono-compatible mode is understandable.
+
+Enable curve-benchmark narration. Test Circle, Triangle, Constant X and Constant
+Y forwards, backwards and with looping. Confirm extrema are spoken when crossed,
+coincident extrema produce one message, loop seams do not create a queue, and
+speech remains understandable over the selected instrument.
 
 Automated unit, axe and browser tests may verify scheduling and operation, but
 they do not complete this protocol.

@@ -422,6 +422,9 @@ test('selects independent instruments and imports a local MIDI note map', async 
   await yVoice.getByLabel('Instrument sound').selectOption('drum');
   await expect(xVoice.getByLabel('Instrument sound')).toHaveValue('trumpet');
   await expect(yVoice.getByLabel('Instrument sound')).toHaveValue('drum');
+  await expect(
+    yVoice.getByLabel('Instrument sound').locator('option'),
+  ).toHaveCount(16);
 
   await xVoice.getByLabel('MIDI file for x-axis').setInputFiles(midiUpload());
   await expect(xVoice.locator('.midi-map-summary')).toContainText(
@@ -433,6 +436,16 @@ test('selects independent instruments and imports a local MIDI note map', async 
     'G4',
   );
   await expect(page.getByText('Audio enabled').locator('..')).toContainText(
+    'No',
+  );
+  await expect(page.getByLabel(/Test sound length/)).toHaveValue('2');
+  await page.getByLabel('Test pattern').selectOption('clave');
+  await yVoice.getByRole('button', { name: 'Test Y' }).click();
+  await expect(
+    page.getByText(/Y voice playing Son-clave pulse for 2\.0 seconds/),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Stop all sound' }).first().click();
+  await expect(page.getByText('Audio sounding').locator('..')).toContainText(
     'No',
   );
 

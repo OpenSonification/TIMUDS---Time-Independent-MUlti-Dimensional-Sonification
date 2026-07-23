@@ -51,7 +51,14 @@ component-specific global listeners.
 Synthetic timbres keep the graph small, persistent, offline and inspectable.
 Each profile combines a harmonic spectrum with pitch-tracked filtering,
 articulation and optional vibrato, secondary voices, inharmonic modulation or
-filtered noise. Struck profiles use distinct decay and pitch behaviour. Full
-SoundFont support would add a large parsing, sampling and licensing surface, so
-it remains out of scope. Local MIDI files supply optional pitch palettes, not
-samples, timing or instruments.
+filtered noise. Struck profiles use distinct decay and pitch behaviour. The
+catalogue favours categorical separation over realistic imitation, so several
+profiles intentionally exaggerate noise, sub-octaves, pitch sweeps or
+modulation.
+
+Full SoundFont support would add a large parsing, sampling and licensing
+surface, so it remains out of scope. Local MIDI files supply optional pitch
+palettes, not samples, timing or instruments. The built-in audition phrases are
+small original note-event fixtures. This avoids bundling third-party MIDI files
+whose reuse could require attribution and ShareAlike terms in a repository that
+does not yet have an owner-selected licence.

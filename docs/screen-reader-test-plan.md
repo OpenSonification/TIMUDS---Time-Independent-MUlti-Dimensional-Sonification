@@ -32,11 +32,11 @@ Use the production build. Start with a fresh page and system output at a low lev
 8. Open coordinate import instructions. Submit `x,y`, `0,0`, `wrong,1`. Confirm the summary receives focus, identifies line 3 and links back to preserved input.
 9. Correct the data to `0,0` and `1,1`; import it. Confirm focus remains predictable and playback does not begin.
 10. Review both axis fieldsets. Confirm instrument sound, gain, mute, solo and advanced mapping controls have visible matching names and descriptions. Confirm disabled manual domains have a nearby prerequisite.
-11. Select different X and Y instruments. Confirm the current-position definition list identifies both choices and that changing a selection does not start audio.
+11. Select different X and Y instruments and each Test pattern. Confirm the current-position definition list identifies both instruments and that changing a selection does not start audio.
 12. Load a valid MIDI file into X. Confirm the status identifies the filename, distinct-note count, note-on event count, track count and pitch range. Review the palette, confirm the low/high range is disabled with an explanation, then remove the map.
 13. Load a malformed `.mid` file into Y. Confirm its inline alert is associated with the Y file input, the existing X configuration is unaffected and no sound starts.
 14. Activate Enable audio. Expected meaning: “Audio enabled. No sound is playing.”
-15. Activate Play, Hold, Stop all sound and Reset traversal. Confirm each state is available as static text and announced once.
+15. Review the curve-benchmark list, enable benchmark announcements, then activate Play. Confirm the initial and subsequently crossed extrema are announced once and match the listed coordinates. Use Hold, Stop all sound and Reset traversal; confirm each state is available as static text and announced once.
 16. Operate Position along curve with native range commands. Expected meaning at one quarter: “Position along curve, slider, 25 percent”, allowing product-specific phrasing.
 17. Use Step backwards and Step forwards. Confirm the announcement follows the selected detail level and does not move focus.
 18. Enter two-dimensional exploration. Expected meaning: “Keyboard exploration started. Arrow keys change x and y. The curve will not change. Press Escape to return.”
@@ -75,9 +75,10 @@ Exact punctuation, ordering and voice-engine phrasing may differ. Meaning must r
 2. Hold a key long enough to trigger repeat. Movement should stay controllable. A boundary should be announced once until movement leaves that boundary.
 3. Select Off. Confirm movement remains visible and available in Current position without coordinate speech.
 4. Select Coordinates and pitches, then Full position details. Confirm each level adds the documented information.
-5. Start timed playback with announcements Off. Confirm no coordinate stream occurs.
+5. Start timed playback with both timed and benchmark announcements Off. Confirm no coordinate stream occurs.
 6. Test 1-, 2-, 5- and 10-second playback intervals. Confirm older messages do not make controls unusable.
-7. Confirm routine statuses never move focus. Confirm only import failure uses the alert path.
+7. Leave timed announcements Off, enable benchmark announcements and play Circle forwards, backwards and looped. Confirm highest/lowest X and Y are discrete messages rather than frame updates. Repeat with Constant X and Constant Y.
+8. Confirm routine statuses never move focus. Confirm only import failure uses the alert path.
 
 ## Screen reader and sonification together
 
@@ -100,10 +101,17 @@ Also record:
 
 - whether X and Y instruments remain distinguishable with one speaker or earbud;
 - whether sustained, mallet and pitched-drum choices remain comfortable and distinguishable;
+- whether Test sound length announces a useful seconds value and gives enough
+  time to identify the pitched drum at 0.5, 2 and 5 seconds;
+- whether the five Test pattern names and descriptions are clear, and whether
+  phrase rests leave enough space for speech;
+- whether benchmark names, grouped extrema and constant-axis messages are
+  understandable in forward, reverse and looped playback;
 - whether MIDI palette and error messages are understandable without hearing the notes;
 - whether mute, solo and text state make axis identity clear;
 - whether blur and Escape fades avoid clicks;
-- whether the selected preview duration leaves enough time to perceive change;
+- whether the explorer's selected preview duration leaves enough time to
+  perceive coordinate changes;
 - whether speech remains understandable at the default master level.
 
 ## Mobile touch scripts

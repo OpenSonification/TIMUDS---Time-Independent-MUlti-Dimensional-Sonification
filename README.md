@@ -21,8 +21,12 @@ The default circle demonstrates why this matters. Its x coordinate repeatedly ri
 - Open/closed curves, reverse traversal, reset, summaries and reproducible JSON download.
 - Constant-spatial-speed and uniform-segment traversal; timed, looped and manual control.
 - Spatial and Axis voice modes backed by one persistent local Web Audio graph.
-- Ten locally synthesised timbres with distinct spectra, filtering, attacks,
-  vibrato and struck-note behaviour.
+- Sixteen locally synthesised timbres, ranging from a plain sine reference to
+  sub-bass, air jet, alarm, arcade, robot, pluck and struck-drum voices.
+- Adjustable 0.5–5 second instrument tests, with a 2-second default and longer
+  calibration decay for drum and mallet sounds.
+- Five original local test patterns: held note, bebop-style run, boogie bass,
+  son-clave pulse and 3:2 hemiola.
 - Independent local Standard MIDI File note-map import for X and Y.
 - Separated default Axis registers, overlap repair, stereo-width and explicit
   mono-compatible controls.
@@ -128,6 +132,11 @@ scheduled voice and cue changes, fades to silence over 120 ms and retains
 position. Progress ticks can be Off or sound every 25%, 12.5% or 10%. Direct
 seeks are silent and delayed frames do not create catch-up storms.
 
+Optional curve-benchmark narration speaks the first arrival at the lowest and
+highest X and Y values. Coincident extrema are grouped into one message. The
+calculated coordinates also appear as ordinary text, and the option starts off
+to avoid unsolicited speech.
+
 ## Keyboard controls
 
 Page shortcuts default to **Workspace only** scope. They can be turned off or
@@ -172,6 +181,11 @@ oscillators. A shared noise source supplies separately filtered instrument
 texture and progress cues. Filters, gains and panners feed one conservative
 master and compressor. The same graph serves both sound modes. Pitch, pan,
 filter and instrument changes use short smoothing constants.
+
+The test controls can play one held note or an original MIDI-style phrase.
+Phrase note events alter pitch and rhythm while the selected synthetic
+instrument remains in charge of timbre. They are generated from source data in
+the application; no recordings or third-party MIDI files are loaded at runtime.
 
 All exits share one Stop method: visible Stop controls, S, Escape, Reset, curve
 or mode changes, page hiding, previews and explorer exits cancel future
@@ -226,7 +240,9 @@ Automated axe checks cover representative default, active and validation-error s
 
 The key boundary is between pure data/audio calculations and React presentation:
 
-- `src/core/` — coordinate types, bounded parsing, deterministic presets, geometry, interpolation, pitch and transport transitions.
+- `src/core/` — coordinate types, bounded parsing, deterministic presets,
+  geometry, interpolation, pitch, audition patterns, curve benchmarks and
+  transport transitions.
 - `src/audio/AudioEngine.ts` — the sole Web Audio owner and persistent audio graph.
 - `src/components/` — SVG plot and iterable per-axis mapping controls.
 - `src/App.tsx` — product state, clock orchestration, imports and accessible interaction.
