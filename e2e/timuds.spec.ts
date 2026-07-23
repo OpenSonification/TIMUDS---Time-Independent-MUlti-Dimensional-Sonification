@@ -34,6 +34,7 @@ async function mockAudioContext(page: Page): Promise<void> {
     }
     class Oscillator extends Node {
       frequency = new Parameter();
+      detune = new Parameter();
       type = 'sine';
       start(): void {}
       stop(): void {}

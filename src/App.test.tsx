@@ -28,6 +28,7 @@ class MockNode {
 
 class MockOscillator extends MockNode {
   frequency = new MockAudioParam();
+  detune = new MockAudioParam();
   type: OscillatorType = 'sine';
   start = vi.fn();
   stop = vi.fn();

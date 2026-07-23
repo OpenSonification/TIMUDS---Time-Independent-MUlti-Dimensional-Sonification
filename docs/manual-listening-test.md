@@ -46,6 +46,26 @@ separation is sufficient, whether pan helps, whether loudness feels balanced,
 whether one voice masks the other, and whether mirrored coordinates remain
 distinguishable. Repeat with mono-compatible output.
 
+## Instrument separation
+
+Use **Test sound** at one unchanged coordinate and compare every instrument at
+the same master level. Confirm that:
+
+- Pure sine tone stays neutral and steady;
+- Warm organ is rounder than Bright synthesiser;
+- Clarinet-like reed sounds narrower and woodier than Flute-like;
+- Trumpet-like brass attacks faster than Bowed-string-like;
+- Mallet-like rings longer than Pitched drum;
+- Pitched drum has a clear downward bend.
+
+Then change instruments in an unpredictable order without looking at the
+selector. Check that the sound family can be identified before reading its
+name. Treat any repeated confusion between a pair as a defect, even if their
+spectra are technically different.
+
+Repeat on headphones, laptop speakers and mono output. Record any pair that is
+hard to distinguish, any large loudness jump and any uncomfortable resonance.
+
 ## Progress cues
 
 Compare 12.5% and 10%. Record whether the tick is audible but unobtrusive,

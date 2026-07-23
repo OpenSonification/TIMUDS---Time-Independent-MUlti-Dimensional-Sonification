@@ -21,8 +21,8 @@ The default circle demonstrates why this matters. Its x coordinate repeatedly ri
 - Open/closed curves, reverse traversal, reset, summaries and reproducible JSON download.
 - Constant-spatial-speed and uniform-segment traversal; timed, looped and manual control.
 - Spatial and Axis voice modes backed by one persistent local Web Audio graph.
-- Ten locally synthesised timbres, including trumpet-like brass, flute-like,
-  strings, mallet and pitched drum.
+- Ten locally synthesised timbres with distinct spectra, filtering, attacks,
+  vibrato and struck-note behaviour.
 - Independent local Standard MIDI File note-map import for X and Y.
 - Separated default Axis registers, overlap repair, stereo-width and explicit
   mono-compatible controls.
@@ -167,9 +167,11 @@ optional, off by default and active only on the focused controller.
 ## Audio design and safety
 
 The graph is created only after Play, Hear current position or a calibration
-action. Two long-lived oscillators, a persistent cue source, filters, gains and
-panners feed one conservative master and compressor. The same graph serves both
-sound modes. Pitch, pan and timbre use short smoothing constants.
+action. Each long-lived voice has carrier, secondary and modulation
+oscillators. A shared noise source supplies separately filtered instrument
+texture and progress cues. Filters, gains and panners feed one conservative
+master and compressor. The same graph serves both sound modes. Pitch, pan,
+filter and instrument changes use short smoothing constants.
 
 All exits share one Stop method: visible Stop controls, S, Escape, Reset, curve
 or mode changes, page hiding, previews and explorer exits cancel future

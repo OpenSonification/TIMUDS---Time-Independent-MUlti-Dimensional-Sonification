@@ -1,4 +1,8 @@
-import { INSTRUMENTS, type InstrumentDefinition } from '../core/instruments';
+import {
+  INSTRUMENTS,
+  instrumentFilterFrequency,
+  type InstrumentDefinition,
+} from '../core/instruments';
 import type { SignBlend } from '../core/sonification';
 import type { AxisConfig, AxisKey, TimbreName } from '../core/types';
 
@@ -10,6 +14,12 @@ export const PROGRESS_TICK_SECONDS = 0.032;
 
 interface Voice {
   oscillator: OscillatorNode;
+  modulator: OscillatorNode;
+  vibratoDepth: GainNode;
+  secondaryOscillator: OscillatorNode;
+  secondaryGain: GainNode;
+  textureFilter: BiquadFilterNode;
+  textureGain: GainNode;
   filter: BiquadFilterNode;
   articulation: GainNode;
   gain: GainNode;
@@ -17,6 +27,7 @@ interface Voice {
   currentTimbre: TimbreName | null;
   currentFrequency: number;
   lastArticulationTime: number;
+  pitchEnvelopeUntil: number;
 }
 
 interface BaseAudioFrame {
@@ -77,6 +88,7 @@ export class AudioEngine {
   private master: GainNode | null = null;
   private voices = new Map<AxisKey, Voice>();
   private waves = new Map<Exclude<TimbreName, 'pure'>, PeriodicWave>();
+  private textureSource: AudioBufferSourceNode | null = null;
   private progressSource: AudioBufferSourceNode | null = null;
   private progressGain: GainNode | null = null;
   private sounding = false;
@@ -113,16 +125,45 @@ export class AudioEngine {
     this.context = context;
     this.master = master;
 
+    const noiseBuffer = context.createBuffer(
+      1,
+      Math.max(1, Math.round(context.sampleRate * 0.35)),
+      context.sampleRate,
+    );
+    const samples = noiseBuffer.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = Math.random() * 2 - 1;
+    }
+    const textureSource = context.createBufferSource();
+    textureSource.buffer = noiseBuffer;
+    textureSource.loop = true;
+
     for (const axis of AXES) {
       const oscillator = context.createOscillator();
+      const modulator = context.createOscillator();
+      const vibratoDepth = context.createGain();
       const filter = context.createBiquadFilter();
       const articulation = context.createGain();
       const gain = context.createGain();
       const panner = context.createStereoPanner();
+      const secondaryOscillator = context.createOscillator();
+      const secondaryGain = context.createGain();
+      const textureFilter = context.createBiquadFilter();
+      const textureGain = context.createGain();
       oscillator.frequency.value = 220;
+      modulator.type = 'sine';
+      modulator.frequency.value = 5;
+      vibratoDepth.gain.value = 0;
+      secondaryOscillator.type = 'sine';
+      secondaryOscillator.frequency.value = 220;
+      secondaryGain.gain.value = 0;
       filter.type = 'lowpass';
       filter.frequency.value = axis === 'x' ? 1500 : 2600;
       filter.Q.value = axis === 'x' ? 0.5 : 2.2;
+      textureFilter.type = 'highpass';
+      textureFilter.frequency.value = 2500;
+      textureFilter.Q.value = 0.35;
+      textureGain.gain.value = 0;
       articulation.gain.value = 1;
       gain.gain.value = 0;
       oscillator
@@ -131,9 +172,23 @@ export class AudioEngine {
         .connect(gain)
         .connect(panner)
         .connect(master);
+      modulator.connect(vibratoDepth).connect(oscillator.detune);
+      secondaryOscillator.connect(secondaryGain).connect(filter);
+      textureSource
+        .connect(textureFilter)
+        .connect(textureGain)
+        .connect(articulation);
       oscillator.start();
+      modulator.start();
+      secondaryOscillator.start();
       this.voices.set(axis, {
         oscillator,
+        modulator,
+        vibratoDepth,
+        secondaryOscillator,
+        secondaryGain,
+        textureFilter,
+        textureGain,
         filter,
         articulation,
         gain,
@@ -141,22 +196,16 @@ export class AudioEngine {
         currentTimbre: null,
         currentFrequency: 0,
         lastArticulationTime: Number.NEGATIVE_INFINITY,
+        pitchEnvelopeUntil: Number.NEGATIVE_INFINITY,
       });
     }
+    textureSource.start();
+    this.textureSource = textureSource;
 
-    const cueBuffer = context.createBuffer(
-      1,
-      Math.max(1, Math.round(context.sampleRate * 0.05)),
-      context.sampleRate,
-    );
-    const samples = cueBuffer.getChannelData(0);
-    for (let index = 0; index < samples.length; index += 1) {
-      samples[index] = Math.random() * 2 - 1;
-    }
     const progressSource = context.createBufferSource();
     const progressFilter = context.createBiquadFilter();
     const progressGain = context.createGain();
-    progressSource.buffer = cueBuffer;
+    progressSource.buffer = noiseBuffer;
     progressSource.loop = true;
     progressFilter.type = 'highpass';
     progressFilter.frequency.value = 3200;
@@ -246,23 +295,63 @@ export class AudioEngine {
     if (!this.context) return;
     const voice = this.voices.get(key);
     if (!voice) return;
+    const definition = INSTRUMENTS[timbre];
     const timbreChanged = this.setTimbre(voice, timbre);
     const pitchChanged =
       voice.currentFrequency <= 0 ||
       Math.abs(1200 * Math.log2(frequency / voice.currentFrequency)) >= 25;
-    voice.oscillator.frequency.setTargetAtTime(
-      frequency,
-      this.context.currentTime,
-      PITCH_SMOOTHING_SECONDS,
-    );
     this.applyArticulation(
       voice,
-      INSTRUMENTS[timbre],
+      definition,
+      forceArticulation || timbreChanged,
       forceArticulation || timbreChanged || pitchChanged,
+      frequency,
+    );
+    if (this.context.currentTime >= voice.pitchEnvelopeUntil) {
+      voice.oscillator.frequency.setTargetAtTime(
+        frequency,
+        this.context.currentTime,
+        PITCH_SMOOTHING_SECONDS,
+      );
+      voice.secondaryOscillator.frequency.setTargetAtTime(
+        frequency * (definition.secondaryVoice?.frequencyRatio ?? 1),
+        this.context.currentTime,
+        PITCH_SMOOTHING_SECONDS,
+      );
+    }
+    const frequencyModulation = definition.frequencyModulation;
+    voice.modulator.frequency.setTargetAtTime(
+      frequencyModulation
+        ? frequency * frequencyModulation.frequencyRatio
+        : definition.vibratoRate,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.vibratoDepth.gain.setTargetAtTime(
+      frequencyModulation
+        ? frequencyModulation.depthCents
+        : definition.vibratoDepthCents,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.filter.frequency.setTargetAtTime(
+      instrumentFilterFrequency(definition, frequency),
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.secondaryGain.gain.setTargetAtTime(
+      definition.secondaryVoice?.gain ?? 0,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.textureGain.gain.setTargetAtTime(
+      definition.noiseTexture?.gain ?? 0,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
     );
     voice.currentFrequency = frequency;
     voice.gain.gain.setTargetAtTime(
-      gain,
+      gain * definition.gainCompensation,
       this.context.currentTime,
       TIMBRE_CROSSFADE_SECONDS,
     );
@@ -278,24 +367,42 @@ export class AudioEngine {
     if (voice.currentTimbre === timbre) return false;
     voice.currentTimbre = timbre;
     const definition = INSTRUMENTS[timbre];
+    let wave: PeriodicWave | null = null;
     if (!definition.harmonics) {
       voice.oscillator.type = 'sine';
     } else {
-      let wave = this.waves.get(timbre as Exclude<TimbreName, 'pure'>);
+      wave = this.waves.get(timbre as Exclude<TimbreName, 'pure'>) ?? null;
       if (!wave) {
         wave = waveFor(this.context, definition);
         this.waves.set(timbre as Exclude<TimbreName, 'pure'>, wave);
       }
       voice.oscillator.setPeriodicWave(wave);
     }
-    voice.filter.type = definition.filterType;
-    voice.filter.frequency.setTargetAtTime(
-      definition.filterFrequency,
+    if (definition.secondaryVoice?.waveform === 'same' && wave) {
+      voice.secondaryOscillator.setPeriodicWave(wave);
+    } else {
+      voice.secondaryOscillator.type = 'sine';
+    }
+    voice.secondaryOscillator.detune.setTargetAtTime(
+      definition.secondaryVoice?.detuneCents ?? 0,
       this.context.currentTime,
       TIMBRE_CROSSFADE_SECONDS,
     );
+    voice.filter.type = definition.filterType;
     voice.filter.Q.setTargetAtTime(
       definition.resonance,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    const texture = definition.noiseTexture;
+    voice.textureFilter.type = texture?.filterType ?? 'highpass';
+    voice.textureFilter.frequency.setTargetAtTime(
+      texture?.filterFrequency ?? 2500,
+      this.context.currentTime,
+      TIMBRE_CROSSFADE_SECONDS,
+    );
+    voice.textureFilter.Q.setTargetAtTime(
+      texture?.resonance ?? 0.35,
       this.context.currentTime,
       TIMBRE_CROSSFADE_SECONDS,
     );
@@ -305,25 +412,51 @@ export class AudioEngine {
   private applyArticulation(
     voice: Voice,
     definition: InstrumentDefinition,
-    trigger: boolean,
+    onset: boolean,
+    strike: boolean,
+    frequency: number,
   ): void {
     if (!this.context) return;
     const now = this.context.currentTime;
     const parameter = voice.articulation.gain;
     if (definition.articulation === 'sustained') {
+      voice.pitchEnvelopeUntil = Number.NEGATIVE_INFINITY;
+      if (!onset) return;
       parameter.cancelScheduledValues(now);
-      parameter.setTargetAtTime(1, now, 0.012);
+      parameter.setValueAtTime(0.0001, now);
+      parameter.setTargetAtTime(1, now, definition.attackSeconds);
       return;
     }
-    if (!trigger || now - voice.lastArticulationTime < 0.09) return;
+    if (!strike || now - voice.lastArticulationTime < 0.09) return;
     voice.lastArticulationTime = now;
     parameter.cancelScheduledValues(now);
-    parameter.setTargetAtTime(1, now, 0.003);
-    parameter.setTargetAtTime(
+    parameter.setValueAtTime(0.0001, now);
+    parameter.linearRampToValueAtTime(1, now + definition.attackSeconds);
+    parameter.exponentialRampToValueAtTime(
       0.0001,
-      now + Math.min(0.055, definition.decaySeconds / 3),
-      definition.decaySeconds,
+      now + definition.attackSeconds + definition.decaySeconds,
     );
+    if (definition.pitchDropCents <= 0) return;
+    voice.oscillator.frequency.cancelScheduledValues(now);
+    voice.oscillator.frequency.setValueAtTime(
+      frequency * 2 ** (definition.pitchDropCents / 1200),
+      now,
+    );
+    voice.oscillator.frequency.exponentialRampToValueAtTime(
+      frequency,
+      now + definition.pitchDropSeconds,
+    );
+    const secondaryRatio = definition.secondaryVoice?.frequencyRatio ?? 1;
+    voice.secondaryOscillator.frequency.cancelScheduledValues(now);
+    voice.secondaryOscillator.frequency.setValueAtTime(
+      frequency * secondaryRatio * 2 ** (definition.pitchDropCents / 1200),
+      now,
+    );
+    voice.secondaryOscillator.frequency.exponentialRampToValueAtTime(
+      frequency * secondaryRatio,
+      now + definition.pitchDropSeconds,
+    );
+    voice.pitchEnvelopeUntil = now + definition.pitchDropSeconds;
   }
 
   startSound(frame: AudioFrame): void {
@@ -351,11 +484,21 @@ export class AudioEngine {
     const now = this.context.currentTime;
     for (const voice of this.voices.values()) {
       voice.oscillator.frequency.cancelScheduledValues(now);
+      voice.modulator.frequency.cancelScheduledValues(now);
+      voice.vibratoDepth.gain.cancelScheduledValues(now);
+      voice.secondaryOscillator.frequency.cancelScheduledValues(now);
+      voice.secondaryOscillator.detune.cancelScheduledValues(now);
+      voice.secondaryGain.gain.cancelScheduledValues(now);
+      voice.textureFilter.frequency.cancelScheduledValues(now);
+      voice.textureFilter.Q.cancelScheduledValues(now);
+      voice.textureGain.gain.cancelScheduledValues(now);
       voice.filter.frequency.cancelScheduledValues(now);
       voice.filter.Q.cancelScheduledValues(now);
       voice.articulation.gain.cancelScheduledValues(now);
       voice.gain.gain.cancelScheduledValues(now);
       voice.panner.pan.cancelScheduledValues(now);
+      voice.lastArticulationTime = Number.NEGATIVE_INFINITY;
+      voice.pitchEnvelopeUntil = Number.NEGATIVE_INFINITY;
     }
     if (this.progressGain) {
       this.progressGain.gain.cancelScheduledValues(now);
@@ -383,8 +526,20 @@ export class AudioEngine {
       try {
         voice.oscillator.stop();
         voice.oscillator.disconnect();
+        voice.modulator.stop();
+        voice.modulator.disconnect();
+        voice.secondaryOscillator.stop();
+        voice.secondaryOscillator.disconnect();
       } catch {
         // An already-stopped oscillator requires no further cleanup.
+      }
+    }
+    if (this.textureSource) {
+      try {
+        this.textureSource.stop();
+        this.textureSource.disconnect();
+      } catch {
+        // An already-stopped buffer source requires no further cleanup.
       }
     }
     if (this.progressSource) {
@@ -401,6 +556,7 @@ export class AudioEngine {
       await this.context.close();
     this.context = null;
     this.master = null;
+    this.textureSource = null;
     this.progressSource = null;
     this.progressGain = null;
     this.currentMasterLevel = 0;

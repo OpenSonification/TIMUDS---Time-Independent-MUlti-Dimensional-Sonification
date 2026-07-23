@@ -49,6 +49,9 @@ component-specific global listeners.
 ## Local synthesis
 
 Synthetic timbres keep the graph small, persistent, offline and inspectable.
-Full SoundFont support would add a large parsing, sampling and licensing
-surface, so it remains out of scope. Local MIDI files supply optional pitch
-palettes, not samples, timing or instruments.
+Each profile combines a harmonic spectrum with pitch-tracked filtering,
+articulation and optional vibrato, secondary voices, inharmonic modulation or
+filtered noise. Struck profiles use distinct decay and pitch behaviour. Full
+SoundFont support would add a large parsing, sampling and licensing surface, so
+it remains out of scope. Local MIDI files supply optional pitch palettes, not
+samples, timing or instruments.

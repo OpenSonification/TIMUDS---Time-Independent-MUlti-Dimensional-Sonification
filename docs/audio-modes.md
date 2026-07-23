@@ -55,9 +55,18 @@ range control.
 
 ## Sound lifecycle
 
-The audio graph is created only after a user action. Two persistent oscillators
-serve either the two Axis voices or the negative/positive components of the
-Spatial timbre blend. Pitch, pan and timbre gains use short smoothing constants.
+The audio graph is created only after a user action. Each of its two voices has
+a carrier, a secondary oscillator and a modulation oscillator. A shared noise
+source supplies separately filtered breath, bow or impact texture. Unused
+layers are faded to zero. Pitch, pan, filter, modulation and voice gain changes
+are smoothed.
+
+The instrument choices differ in more than harmonic balance. Their profiles
+also select octave or inharmonic layers, filtered noise, attack or struck
+decay, pitch-tracked filters and vibrato. The strings use a detuned layer, the
+flute adds breath texture, the mallet uses audio-rate inharmonic modulation and
+the pitched drum combines impact noise with a short downward bend. All profiles
+still use local synthesis inside the same persistent graph.
 
 Every stop route calls the same `AudioEngine.stopAllSound` method. It cancels
 pending automation for voices and cues, then ramps the master gain to silence

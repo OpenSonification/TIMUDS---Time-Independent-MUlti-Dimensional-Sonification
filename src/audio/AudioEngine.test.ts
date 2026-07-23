@@ -25,6 +25,7 @@ class Node {
 
 class Oscillator extends Node {
   frequency = new Parameter();
+  detune = new Parameter();
   type: OscillatorType = 'sine';
   start = vi.fn();
   stop = vi.fn();
@@ -164,8 +165,8 @@ describe('persistent audio engine', () => {
     const engine = new AudioEngine();
     await engine.enable();
     const context = Context.latest!;
-    expect(context.oscillators).toHaveLength(2);
-    expect(context.bufferSources).toHaveLength(1);
+    expect(context.oscillators).toHaveLength(6);
+    expect(context.bufferSources).toHaveLength(2);
 
     engine.startSound({
       mode: 'spatial',
@@ -198,7 +199,7 @@ describe('persistent audio engine', () => {
       monoCompatible: false,
     });
 
-    expect(context.oscillators).toHaveLength(2);
+    expect(context.oscillators).toHaveLength(6);
     expect(
       context.oscillators[0]!.frequency.setTargetAtTime,
     ).toHaveBeenCalled();
@@ -230,6 +231,143 @@ describe('persistent audio engine', () => {
       4,
       expect.any(Number),
     );
+  });
+
+  it('applies clearly different filter, vibrato and envelope profiles', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+    const frame = {
+      mode: 'spatial' as const,
+      frequency: 440,
+      pan: 0,
+      ySignCue: false,
+      signBlend: {
+        sign: 'positive' as const,
+        negativeGain: 0,
+        positiveGain: 1,
+        transitionWidth: 0.05,
+      },
+      masterVolume: 0.18,
+      monoCompatible: false,
+    };
+
+    engine.startSound({ ...frame, timbre: 'bright' });
+    expect(context.filters[0]!.type).toBe('highpass');
+    expect(context.oscillators[2]!.setPeriodicWave).toHaveBeenCalled();
+    expect(context.gains[4]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0.22,
+      4,
+      expect.any(Number),
+    );
+    expect(
+      context.oscillators[1]!.frequency.setTargetAtTime,
+    ).toHaveBeenLastCalledWith(0, 4, expect.any(Number));
+    expect(context.gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0,
+      4,
+      expect.any(Number),
+    );
+
+    engine.applyFrame({ ...frame, timbre: 'strings' });
+    expect(context.filters[0]!.type).toBe('lowpass');
+    expect(
+      context.oscillators[1]!.frequency.setTargetAtTime,
+    ).toHaveBeenLastCalledWith(5, 4, expect.any(Number));
+    expect(context.gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      24,
+      4,
+      expect.any(Number),
+    );
+    expect(context.gains[2]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      1,
+      4,
+      0.11,
+    );
+    expect(
+      context.oscillators[2]!.detune.setTargetAtTime,
+    ).toHaveBeenLastCalledWith(13, 4, expect.any(Number));
+    expect(context.gains[5]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0.025,
+      4,
+      expect.any(Number),
+    );
+  });
+
+  it('uses inharmonic modulation for the mallet and breath noise for the flute', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+    const frame = {
+      mode: 'spatial' as const,
+      frequency: 440,
+      pan: 0,
+      ySignCue: false,
+      signBlend: {
+        sign: 'positive' as const,
+        negativeGain: 0,
+        positiveGain: 1,
+        transitionWidth: 0.05,
+      },
+      masterVolume: 0.18,
+      monoCompatible: false,
+    };
+
+    engine.startSound({ ...frame, timbre: 'mallet' });
+    expect(
+      context.oscillators[1]!.frequency.setTargetAtTime,
+    ).toHaveBeenLastCalledWith(440 * 3.73, 4, expect.any(Number));
+    expect(context.gains[1]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      240,
+      4,
+      expect.any(Number),
+    );
+    expect(
+      context.oscillators[2]!.frequency.setTargetAtTime,
+    ).toHaveBeenLastCalledWith(440 * 2.71, 4, expect.any(Number));
+
+    engine.applyFrame({ ...frame, timbre: 'flute' });
+    expect(context.filters[1]!.type).toBe('highpass');
+    expect(context.gains[5]!.gain.setTargetAtTime).toHaveBeenLastCalledWith(
+      0.045,
+      4,
+      expect.any(Number),
+    );
+  });
+
+  it('gives the pitched drum a short level envelope and downward pitch bend', async () => {
+    const engine = new AudioEngine();
+    await engine.enable();
+    const context = Context.latest!;
+
+    engine.startSound({
+      mode: 'spatial',
+      frequency: 440,
+      pan: 0,
+      timbre: 'drum',
+      ySignCue: false,
+      signBlend: {
+        sign: 'positive',
+        negativeGain: 0,
+        positiveGain: 1,
+        transitionWidth: 0.05,
+      },
+      masterVolume: 0.18,
+      monoCompatible: false,
+    });
+
+    expect(
+      context.oscillators[0]!.frequency.setValueAtTime,
+    ).toHaveBeenCalledWith(440 * 2 ** (750 / 1200), 4);
+    expect(
+      context.oscillators[0]!.frequency.exponentialRampToValueAtTime,
+    ).toHaveBeenCalledWith(440, 4.08);
+    expect(
+      context.oscillators[2]!.frequency.exponentialRampToValueAtTime,
+    ).toHaveBeenCalledWith(220, 4.08);
+    expect(
+      context.gains[2]!.gain.exponentialRampToValueAtTime,
+    ).toHaveBeenCalledWith(0.0001, 4.122);
   });
 
   it('uses the cue path and cancels every scheduled path on stop', async () => {

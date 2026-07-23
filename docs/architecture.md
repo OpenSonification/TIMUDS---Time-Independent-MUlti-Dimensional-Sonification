@@ -32,8 +32,8 @@ Pitch functions normalise, clamp, optionally invert and convert MIDI to hertz. W
 `sonification.ts` owns X-to-pan mapping, Spatial and Axis mode point mapping,
 range-overlap detection and the equal-power Y-sign blend. `instruments.ts` is
 the pure catalogue for ten synthetic choices. Each definition supplies a
-visible label and description plus harmonics, filter and articulation
-parameters.
+visible label and description plus harmonics, pitch-tracked filter,
+articulation, vibrato and level-compensation parameters.
 
 ## Timing and transport
 
@@ -64,26 +64,36 @@ Plane exploration stores the curve traversal progress before it starts. Its coor
 One `AudioEngine` owns the lifecycle:
 
 ```text
-X oscillator → X filter → X articulation → X voice gain → X panner ┐
-                                                                  ├→ master gain → compressor → destination
-Y oscillator → Y filter → Y articulation → Y voice gain → Y panner ┘
-looped noise buffer → high-pass filter → cue gain ─────────────────┘
+X modulation oscillator → modulation depth → X carrier detune
+X secondary oscillator → layer gain ┐
+X carrier oscillator ───────────────┴→ X filter ┐
+noise source → X texture filter → texture gain ┴→ X articulation → X gain → X panner ┐
+                                                                                     ├→ master → compressor → destination
+noise source → Y texture filter → texture gain ┬→ Y articulation → Y gain → Y panner ┘
+Y carrier oscillator ───────────────┬→ Y filter ┘
+Y secondary oscillator → layer gain ┘
+Y modulation oscillator → modulation depth → Y carrier detune
+noise source → high-pass filter → cue gain ──────────────────────────────────────────┘
 ```
 
 The context and graph are created only from deliberate Play/calibration
 handlers. Sources then remain alive until teardown. In Axis mode the two paths
 are independent voices. In Spatial mode they share Y pitch and X pan and can
 crossfade hollow/bright sign timbres. `PeriodicWave` harmonics and filter
-settings make the synthetic instrument families; pure tone uses sine.
-Frequency, voice gain, panning and master gain use bounded smoothing.
+tracking make the synthetic instrument families. Optional octave, detuned,
+inharmonic and filtered-noise layers provide larger categorical differences;
+attack, decay and vibrato separate behaviour over time. Pure tone uses sine.
+Frequency, filter, modulation, layer, texture, voice gain, panning and master
+gain use bounded smoothing.
 
 `progressCues.ts` detects threshold crossings without audio or UI state. Direct
 seeks are silent, loop wraps are explicit and call sites cap scheduling after
 delayed frames.
 
-`stopAllSound` marks the engine silent, cancels future oscillator, filter,
-articulation, voice-gain, pan and cue automation, then linearly ramps the master
-to zero over 120 ms. Every application Stop route reaches this method.
+`stopAllSound` marks the engine silent, cancels future carrier, secondary,
+modulation, texture, filter, articulation, voice-gain, pan and cue automation,
+then linearly ramps the master to zero over 120 ms. Every application Stop route
+reaches this method.
 Application teardown additionally stops/disconnects sources and closes the
 context. An unavailable constructor leaves all non-audio paths operational.
 
