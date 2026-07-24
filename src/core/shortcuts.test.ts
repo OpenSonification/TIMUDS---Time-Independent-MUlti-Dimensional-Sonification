@@ -6,6 +6,7 @@ const base: ShortcutInput = {
   scope: 'workspace',
   targetInsideWorkspace: true,
   targetOwnsKeyboard: false,
+  targetAllowsLetterCommands: false,
   dialogOpen: false,
   defaultPrevented: false,
   composing: false,
@@ -27,7 +28,9 @@ describe('central shortcut resolver', () => {
     [' ', {}, 'toggle-play-hold'],
     ['s', {}, 'stop'],
     ['S', {}, 'stop'],
+    ['S', { shiftKey: true }, 'stop'],
     ['r', {}, 'reset'],
+    ['R', { shiftKey: true }, 'reset'],
     ['ArrowLeft', {}, 'step-back-1'],
     ['ArrowRight', {}, 'step-forward-1'],
     ['ArrowLeft', { shiftKey: true }, 'step-back-10'],
@@ -61,6 +64,20 @@ describe('central shortcut resolver', () => {
   ])('rejects %s', (_name, changes) => {
     expect(resolve('s', changes)).toBeNull();
     expect(resolve('ArrowRight', changes)).toBeNull();
+  });
+
+  it('allows S and R from a focused button without taking over its native keys', () => {
+    const focusedButton = {
+      targetOwnsKeyboard: true,
+      targetAllowsLetterCommands: true,
+    };
+    expect(resolve('s', focusedButton)).toBe('stop');
+    expect(resolve('r', focusedButton)).toBe('reset');
+    expect(resolve('S', { ...focusedButton, shiftKey: true })).toBe('stop');
+    expect(resolve('R', { ...focusedButton, shiftKey: true })).toBe('reset');
+    expect(resolve(' ', focusedButton)).toBeNull();
+    expect(resolve('ArrowRight', focusedButton)).toBeNull();
+    expect(resolve('?', focusedButton)).toBeNull();
   });
 
   it('retains one-shot repeat protection while permitting arrow repeat', () => {

@@ -342,6 +342,15 @@ function keyboardTargetOwnsInput(target: EventTarget | null): boolean {
   );
 }
 
+function keyboardTargetAllowsLetterCommands(
+  target: EventTarget | null,
+): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.matches('button') || target.getAttribute('role') === 'button')
+  );
+}
+
 export function App() {
   const [initialPreferences] = useState<TimudsPreferences>(() =>
     loadPreferences(
@@ -916,6 +925,7 @@ export function App() {
             target === document.documentElement,
           ),
         targetOwnsKeyboard: keyboardTargetOwnsInput(target),
+        targetAllowsLetterCommands: keyboardTargetAllowsLetterCommands(target),
         dialogOpen: helpOpen || Boolean(document.querySelector('dialog[open]')),
         defaultPrevented: event.defaultPrevented,
         composing: event.isComposing,
@@ -3254,8 +3264,9 @@ export function App() {
                   </label>
                 </div>
                 <p className="fine-print">
-                  Shortcuts never take over typing, native form controls, open
-                  dialogs, browser or assistive-technology modifier commands.
+                  Shortcuts never take over typing, input-widget keys, open
+                  dialogs, browser or assistive-technology modifier commands. S
+                  and R still work while a button retains focus.
                 </p>
                 <button
                   type="button"
@@ -3469,7 +3480,8 @@ export function App() {
         </div>
         <p>
           Current scope: <strong>{shortcutScope.replace('-', ' ')}</strong>.
-          These commands work away from form controls and editable text.
+          Commands work away from editable text and input widgets. S and R also
+          work from a focused button.
         </p>
         <div className="keyboard-table-wrap">
           <table>
