@@ -55,7 +55,9 @@ depends on memorising keys.
 
 Site-wide shortcuts are user-controlled and persisted; workspace scope is the
 default. A single pure resolver owns guards and command mapping, preventing
-component-specific global listeners.
+component-specific global listeners. Stop is the only page-wide exception while
+shortcuts are enabled because silencing audio is a safety action; editable and
+input widgets still retain the S key.
 
 ## Local synthesis
 

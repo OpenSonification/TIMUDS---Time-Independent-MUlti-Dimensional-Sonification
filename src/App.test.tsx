@@ -499,11 +499,13 @@ describe('TIMUDS workspace', () => {
     fireEvent.change(slider, { target: { value: '0.2' } });
     const playButton = screen.getByRole('button', { name: /Play|Resume/ });
     await user.click(playButton);
-    expect(playButton).toHaveFocus();
+    const soundNavigationLink = screen.getByRole('link', { name: 'Sound' });
+    soundNavigationLink.focus();
+    expect(soundNavigationLink).toHaveFocus();
+    await user.keyboard('r');
+    expect(slider).toHaveValue('0.2');
     await user.keyboard('s');
     expect(screen.getAllByText(/^Stopped$/).length).toBeGreaterThan(0);
-    await user.keyboard('r');
-    expect(slider).toHaveValue('0');
 
     await user.click(playButton);
     const input = screen.getByLabelText('Coordinate data');

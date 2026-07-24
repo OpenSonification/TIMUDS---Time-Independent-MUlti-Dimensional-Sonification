@@ -19,6 +19,7 @@ export interface ShortcutInput {
   targetInsideWorkspace: boolean;
   targetOwnsKeyboard: boolean;
   targetAllowsLetterCommands: boolean;
+  targetAllowsStop: boolean;
   dialogOpen: boolean;
   defaultPrevented: boolean;
   composing: boolean;
@@ -39,21 +40,25 @@ export function resolveShortcut(input: ShortcutInput): ShortcutCommand | null {
   const key = input.key;
   const normalised = key.length === 1 ? key.toLowerCase() : key;
   const isArrow = normalised === 'ArrowLeft' || normalised === 'ArrowRight';
+  const isStop = normalised === 's';
   const isLetterCommand = normalised === 's' || normalised === 'r';
   const isHelp = normalised === '?' || normalised === '/';
   const targetBlocksCommand =
     input.targetOwnsKeyboard &&
-    !(input.targetAllowsLetterCommands && isLetterCommand);
+    !(
+      (input.targetAllowsStop && isStop) ||
+      (input.targetAllowsLetterCommands && isLetterCommand)
+    );
 
   if (
     input.scope === 'off' ||
     input.defaultPrevented ||
     input.composing ||
     targetBlocksCommand ||
-    input.dialogOpen ||
+    (input.dialogOpen && !isStop) ||
     input.ctrlKey ||
     input.metaKey ||
-    (input.scope === 'workspace' && !input.targetInsideWorkspace)
+    (input.scope === 'workspace' && !input.targetInsideWorkspace && !isStop)
   )
     return null;
 
