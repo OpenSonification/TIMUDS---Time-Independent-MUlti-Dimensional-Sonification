@@ -17,6 +17,7 @@ locally.
 | Escape               | Emergency fade when sound is active |
 | ?                    | Open Keyboard help                  |
 
+Lowercase and Shift-modified uppercase S/R are equivalent.
 An optional setting requires Alt for S, R and ?. Control and Command modified
 shortcuts are left to the browser and assistive technology.
 
@@ -25,8 +26,8 @@ shortcuts are left to the browser and assistive technology.
 The central resolver does not handle a command when:
 
 - shortcuts are off, or workspace scope does not contain the event target;
-- an input, textarea, select, button, link, contenteditable region or
-  interactive ARIA widget owns the key;
+- an input, textarea, select, link, contenteditable region or interactive ARIA
+  widget owns the key;
 - a dialog is open;
 - IME composition is active;
 - the event was already handled;
@@ -34,7 +35,10 @@ The central resolver does not handle a command when:
 - a one-shot command is an auto-repeat.
 
 Arrow repeats remain available. End is omitted for closed curves. Native range
-controls keep their browser keyboard behaviour.
+controls keep their browser keyboard behaviour. A focused button continues to
+own Space and Enter, but does not swallow the S and R commands after Play,
+Hold, Stop or another button has been activated. Editable controls, selects,
+ranges and other input widgets still block those letter shortcuts.
 
 ## Two-dimensional explorer
 

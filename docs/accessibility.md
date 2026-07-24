@@ -62,10 +62,12 @@ Use Tab and Shift+Tab to move through native controls. Enter and Space activate 
 
 Workspace shortcuts support Space, S, R, Left/Right, Shift+Left/Right, Home,
 open-curve End, Escape and ?. They can be switched off or deliberately extended
-site-wide. They never handle keys owned by editable/native controls, open
-dialogs, IME composition, the browser or assistive-technology modifier
-commands. The visible Keyboard help dialog contains the complete map and
-restores focus when closed.
+site-wide. Editable fields and input widgets retain their keys. A button retains
+Space and Enter while allowing S and R, so those commands still work after
+Play or another button leaves focus in place. Open dialogs, IME composition,
+the browser and assistive-technology modifier commands remain guarded. The
+visible Keyboard help dialog contains the complete map and restores focus when
+closed.
 
 ### Follow the curve
 

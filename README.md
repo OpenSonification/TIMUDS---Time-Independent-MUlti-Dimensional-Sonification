@@ -167,9 +167,10 @@ calculated coordinates also appear as ordinary text.
 ## Keyboard controls
 
 Page shortcuts default to **Workspace only** scope. They can be turned off or
-deliberately changed to site-wide scope. Editable fields, native controls, open
+deliberately changed to site-wide scope. Editable fields, input widgets, open
 dialogs, IME composition, handled events and browser/assistive-technology
-modifiers keep their keys.
+modifiers keep their keys. S and R remain available when focus stays on a
+button after it is activated; the button still owns Space and Enter.
 
 | Key                  | Action                           |
 | -------------------- | -------------------------------- |

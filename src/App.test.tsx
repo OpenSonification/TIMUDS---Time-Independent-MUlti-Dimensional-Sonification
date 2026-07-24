@@ -495,11 +495,21 @@ describe('TIMUDS workspace', () => {
     );
     await waitFor(() => expect(helpButton).toHaveFocus());
 
-    await user.click(screen.getByRole('button', { name: 'Play' }));
+    const slider = screen.getByLabelText('Position along curve');
+    fireEvent.change(slider, { target: { value: '0.2' } });
+    const playButton = screen.getByRole('button', { name: /Play|Resume/ });
+    await user.click(playButton);
+    expect(playButton).toHaveFocus();
+    await user.keyboard('s');
+    expect(screen.getAllByText(/^Stopped$/).length).toBeGreaterThan(0);
+    await user.keyboard('r');
+    expect(slider).toHaveValue('0');
+
+    await user.click(playButton);
     const input = screen.getByLabelText('Coordinate data');
     await user.click(input);
-    await user.keyboard('s');
-    expect((input as HTMLTextAreaElement).value).toContain('s');
+    await user.keyboard('sr');
+    expect((input as HTMLTextAreaElement).value).toContain('sr');
     expect(screen.getAllByText(/^Playing$/).length).toBeGreaterThan(0);
 
     fireEvent.keyDown(document.querySelector('.workspace-grid')!, {

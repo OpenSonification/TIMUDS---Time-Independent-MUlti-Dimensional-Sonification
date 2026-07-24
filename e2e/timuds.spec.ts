@@ -284,15 +284,26 @@ test('enables audio deliberately and operates the complete transport', async ({
       ),
     )
     .toContain('Highest X coordinate. X 1. Y 0.');
-  await page.getByRole('button', { name: 'Hold' }).click();
+  const holdButton = page.getByRole('button', { name: 'Hold' });
+  await holdButton.click();
   await expect(
     page.getByText(/Holding at current point/).first(),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Move to start' }).click();
-  await page.getByRole('button', { name: 'Step forwards' }).click();
+  const stepForwardButton = page.getByRole('button', {
+    name: 'Step forwards',
+  });
+  await stepForwardButton.click();
   await expect(page.getByLabel('Position along curve')).toHaveValue('0.01');
-  await page.getByRole('button', { name: 'Step backwards' }).click();
+  await expect(stepForwardButton).toBeFocused();
+  await page.keyboard.press('Shift+R');
   await expect(page.getByLabel('Position along curve')).toHaveValue('0');
+  await page.getByRole('button', { name: 'Play' }).click();
+  await expect(page.getByText(/^Playing$/).first()).toBeVisible();
+  await stepForwardButton.click();
+  await expect(stepForwardButton).toBeFocused();
+  await page.keyboard.press('Shift+S');
+  await expect(page.getByText(/^Stopped$/).first()).toBeVisible();
   await page.getByRole('button', { name: 'Stop all sound' }).first().click();
   await expect(page.getByText('Audio sounding').locator('..')).toContainText(
     'No',

@@ -18,6 +18,7 @@ export interface ShortcutInput {
   scope: ShortcutScope;
   targetInsideWorkspace: boolean;
   targetOwnsKeyboard: boolean;
+  targetAllowsLetterCommands: boolean;
   dialogOpen: boolean;
   defaultPrevented: boolean;
   composing: boolean;
@@ -35,11 +36,20 @@ function letterModifierAllowed(input: ShortcutInput): boolean {
 }
 
 export function resolveShortcut(input: ShortcutInput): ShortcutCommand | null {
+  const key = input.key;
+  const normalised = key.length === 1 ? key.toLowerCase() : key;
+  const isArrow = normalised === 'ArrowLeft' || normalised === 'ArrowRight';
+  const isLetterCommand = normalised === 's' || normalised === 'r';
+  const isHelp = normalised === '?' || normalised === '/';
+  const targetBlocksCommand =
+    input.targetOwnsKeyboard &&
+    !(input.targetAllowsLetterCommands && isLetterCommand);
+
   if (
     input.scope === 'off' ||
     input.defaultPrevented ||
     input.composing ||
-    input.targetOwnsKeyboard ||
+    targetBlocksCommand ||
     input.dialogOpen ||
     input.ctrlKey ||
     input.metaKey ||
@@ -47,18 +57,19 @@ export function resolveShortcut(input: ShortcutInput): ShortcutCommand | null {
   )
     return null;
 
-  const key = input.key;
-  const normalised = key.length === 1 ? key.toLowerCase() : key;
-  const isArrow = normalised === 'ArrowLeft' || normalised === 'ArrowRight';
-  const isLetterCommand = normalised === 's' || normalised === 'r';
-  const isHelp = normalised === '?' || normalised === '/';
-
   if (
     input.altKey &&
     !((isLetterCommand || isHelp) && input.requireAltForLetters)
   )
     return null;
-  if (input.shiftKey && !isArrow && !isHelp && normalised !== ' ') return null;
+  if (
+    input.shiftKey &&
+    !isArrow &&
+    !isLetterCommand &&
+    !isHelp &&
+    normalised !== ' '
+  )
+    return null;
   if (input.repeat && normalised !== 'ArrowLeft' && normalised !== 'ArrowRight')
     return null;
 
