@@ -302,6 +302,16 @@ test('enables audio deliberately and operates the complete transport', async ({
   await expect(page.getByText(/^Playing$/).first()).toBeVisible();
   await stepForwardButton.click();
   await expect(stepForwardButton).toBeFocused();
+  const positionBeforeScopedReset = await page
+    .getByLabel('Position along curve')
+    .inputValue();
+  const soundNavigationLink = page.getByRole('link', { name: 'Sound' });
+  await soundNavigationLink.focus();
+  await expect(soundNavigationLink).toBeFocused();
+  await page.keyboard.press('Shift+R');
+  await expect(page.getByLabel('Position along curve')).toHaveValue(
+    positionBeforeScopedReset,
+  );
   await page.keyboard.press('Shift+S');
   await expect(page.getByText(/^Stopped$/).first()).toBeVisible();
   await page.getByRole('button', { name: 'Stop all sound' }).first().click();

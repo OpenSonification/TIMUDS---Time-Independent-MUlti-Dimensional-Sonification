@@ -3,19 +3,20 @@
 Every command below also has a visible native control. Page shortcuts start in
 **Workspace only** scope. They can be switched off or deliberately extended to
 the whole page under Accessibility; this preference is validated and stored
-locally.
+locally. While shortcuts are enabled, S is a page-wide safety exception. The
+other commands follow the selected scope.
 
-| Key                  | Workspace action                    |
-| -------------------- | ----------------------------------- |
-| Space                | Play, or hold while playing         |
-| S                    | Stop all sound with a fade          |
-| R                    | Stop and return to the start        |
-| Left / Right         | Move backwards / forwards by 1%     |
-| Shift + Left / Right | Move backwards / forwards by 10%    |
-| Home                 | Move to the start                   |
-| End                  | Move to the end of an open curve    |
-| Escape               | Emergency fade when sound is active |
-| ?                    | Open Keyboard help                  |
+| Key                  | Scope      | Action                              |
+| -------------------- | ---------- | ----------------------------------- |
+| Space                | Selected   | Play, or hold while playing         |
+| S                    | Whole page | Stop all sound with a fade          |
+| R                    | Selected   | Stop and return to the start        |
+| Left / Right         | Selected   | Move backwards / forwards by 1%     |
+| Shift + Left / Right | Selected   | Move backwards / forwards by 10%    |
+| Home                 | Selected   | Move to the start                   |
+| End                  | Selected   | Move to the end of an open curve    |
+| Escape               | Selected   | Emergency fade when sound is active |
+| ?                    | Selected   | Open Keyboard help                  |
 
 Lowercase and Shift-modified uppercase S/R are equivalent.
 An optional setting requires Alt for S, R and ?. Control and Command modified
@@ -23,16 +24,18 @@ shortcuts are left to the browser and assistive technology.
 
 ## Safeguards
 
-The central resolver does not handle a command when:
+The central resolver does not handle any command when:
 
-- shortcuts are off, or workspace scope does not contain the event target;
-- an input, textarea, select, link, contenteditable region or interactive ARIA
-  widget owns the key;
-- a dialog is open;
+- shortcuts are off;
 - IME composition is active;
 - the event was already handled;
 - Control or Command is pressed;
 - a one-shot command is an auto-repeat.
+
+For commands other than S, workspace scope must contain the event target and an
+open dialog blocks the page command. S remains available across the page and
+inside Keyboard help. Inputs, text areas, selects, contenteditable regions and
+equivalent ARIA input widgets keep S as well as their other keys.
 
 Arrow repeats remain available. End is omitted for closed curves. Native range
 controls keep their browser keyboard behaviour. A focused button continues to

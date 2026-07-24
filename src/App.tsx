@@ -351,6 +351,30 @@ function keyboardTargetAllowsLetterCommands(
   );
 }
 
+function keyboardTargetAllowsStop(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (
+    target.isContentEditable ||
+    target.matches('input, textarea, select, [contenteditable="true"]')
+  )
+    return false;
+  const role = target.getAttribute('role');
+  return !(
+    role &&
+    [
+      'checkbox',
+      'combobox',
+      'listbox',
+      'option',
+      'radio',
+      'slider',
+      'spinbutton',
+      'switch',
+      'textbox',
+    ].includes(role)
+  );
+}
+
 export function App() {
   const [initialPreferences] = useState<TimudsPreferences>(() =>
     loadPreferences(
@@ -926,6 +950,7 @@ export function App() {
           ),
         targetOwnsKeyboard: keyboardTargetOwnsInput(target),
         targetAllowsLetterCommands: keyboardTargetAllowsLetterCommands(target),
+        targetAllowsStop: keyboardTargetAllowsStop(target),
         dialogOpen: helpOpen || Boolean(document.querySelector('dialog[open]')),
         defaultPrevented: event.defaultPrevented,
         composing: event.isComposing,
@@ -3264,9 +3289,10 @@ export function App() {
                   </label>
                 </div>
                 <p className="fine-print">
-                  Shortcuts never take over typing, input-widget keys, open
-                  dialogs, browser or assistive-technology modifier commands. S
-                  and R still work while a button retains focus.
+                  Off disables every shortcut. Otherwise S stops sound anywhere
+                  on the page except an editable field or input widget. The
+                  other commands follow the selected scope. Browser and
+                  assistive-technology modifier commands remain untouched.
                 </p>
                 <button
                   type="button"
@@ -3480,12 +3506,14 @@ export function App() {
         </div>
         <p>
           Current scope: <strong>{shortcutScope.replace('-', ' ')}</strong>.
-          Commands work away from editable text and input widgets. S and R also
-          work from a focused button.
+          {shortcutScope === 'off'
+            ? ' All shortcuts are disabled.'
+            : ' S stops sound anywhere on the page; the other commands follow this scope.'}{' '}
+          Editable text and input widgets keep their keys.
         </p>
         <div className="keyboard-table-wrap">
           <table>
-            <caption>Workspace commands</caption>
+            <caption>Keyboard commands</caption>
             <thead>
               <tr>
                 <th scope="col">Key</th>
@@ -3503,7 +3531,7 @@ export function App() {
                 <th scope="row">
                   <kbd>S</kbd>
                 </th>
-                <td>Stop all sound</td>
+                <td>Stop all sound anywhere on the page</td>
               </tr>
               <tr>
                 <th scope="row">

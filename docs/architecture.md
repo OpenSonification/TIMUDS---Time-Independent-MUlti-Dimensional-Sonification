@@ -75,7 +75,9 @@ Manual movement writes normalised progress directly. Once audio has been deliber
 arrow/WASD mapping, clamping, boundary detection and nearest-source-point
 selection pure. `shortcuts.ts` is the central page-command resolver: it owns
 scope, modifier, repeat, editable-control, dialog and composition guards.
-Visible controls remain available for every page command.
+When shortcuts are enabled, Stop is the sole page-wide scope exception and
+remains blocked in editable/input widgets. Visible controls remain available
+for every page command.
 
 Plane exploration stores the curve traversal progress before it starts. Its coordinate is separate from `CurveData`, so movement cannot mutate the curve. The user can explicitly copy the coordinate into the point list or move the saved traversal progress to the nearest source point.
 

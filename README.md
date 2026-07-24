@@ -169,13 +169,15 @@ calculated coordinates also appear as ordinary text.
 Page shortcuts default to **Workspace only** scope. They can be turned off or
 deliberately changed to site-wide scope. Editable fields, input widgets, open
 dialogs, IME composition, handled events and browser/assistive-technology
-modifiers keep their keys. S and R remain available when focus stays on a
-button after it is activated; the button still owns Space and Enter.
+modifiers keep their keys. While shortcuts are enabled, S is the safety
+exception: it stops sound from anywhere on the page except an editable field or
+input widget. R and the remaining commands still follow the selected scope.
+Buttons keep Space and Enter.
 
 | Key                  | Action                           |
 | -------------------- | -------------------------------- |
 | Space                | Play or hold                     |
-| S                    | Stop all sound                   |
+| S                    | Stop all sound anywhere          |
 | R                    | Stop and return to the start     |
 | Left / Right         | Move 1%                          |
 | Shift + Left / Right | Move 10%                         |

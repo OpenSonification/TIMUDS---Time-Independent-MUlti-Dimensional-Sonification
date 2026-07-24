@@ -7,6 +7,7 @@ const base: ShortcutInput = {
   targetInsideWorkspace: true,
   targetOwnsKeyboard: false,
   targetAllowsLetterCommands: false,
+  targetAllowsStop: false,
   dialogOpen: false,
   defaultPrevented: false,
   composing: false,
@@ -44,19 +45,19 @@ describe('central shortcut resolver', () => {
   });
 
   it('supports workspace, site-wide and off scopes', () => {
-    expect(resolve('s', { targetInsideWorkspace: false })).toBeNull();
+    expect(resolve('s', { targetInsideWorkspace: false })).toBe('stop');
+    expect(resolve('r', { targetInsideWorkspace: false })).toBeNull();
     expect(
-      resolve('s', {
+      resolve('r', {
         scope: 'site-wide',
         targetInsideWorkspace: false,
       }),
-    ).toBe('stop');
+    ).toBe('reset');
     expect(resolve('s', { scope: 'off' })).toBeNull();
   });
 
   it.each([
     ['editing control', { targetOwnsKeyboard: true }],
-    ['open dialog', { dialogOpen: true }],
     ['prevented event', { defaultPrevented: true }],
     ['IME composition', { composing: true }],
     ['Control modifier', { ctrlKey: true }],
@@ -66,10 +67,26 @@ describe('central shortcut resolver', () => {
     expect(resolve('ArrowRight', changes)).toBeNull();
   });
 
+  it('keeps Stop available across the page and in a dialog', () => {
+    const nonEditableControl = {
+      targetInsideWorkspace: false,
+      targetOwnsKeyboard: true,
+      targetAllowsStop: true,
+    };
+    expect(resolve('s', nonEditableControl)).toBe('stop');
+    expect(resolve('S', { ...nonEditableControl, shiftKey: true })).toBe(
+      'stop',
+    );
+    expect(resolve('r', nonEditableControl)).toBeNull();
+    expect(resolve('s', { dialogOpen: true })).toBe('stop');
+    expect(resolve('r', { dialogOpen: true })).toBeNull();
+  });
+
   it('allows S and R from a focused button without taking over its native keys', () => {
     const focusedButton = {
       targetOwnsKeyboard: true,
       targetAllowsLetterCommands: true,
+      targetAllowsStop: true,
     };
     expect(resolve('s', focusedButton)).toBe('stop');
     expect(resolve('r', focusedButton)).toBe('reset');

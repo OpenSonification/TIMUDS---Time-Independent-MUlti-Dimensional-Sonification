@@ -47,10 +47,11 @@ Use the production build. Start with a fresh page and system output at a low lev
     Y audio input.
 16. Activate Enable audio if the sample test did not already enable it.
     Activate Play, use Step forwards so that focus remains on a traversal
-    button while sound is active, then press S; confirm audio stops. Leave focus
-    on that button and press R; confirm the curve returns to the start. Repeat
-    in an editable field and confirm the letters are entered instead. Expected
-    enabled-state meaning: “Audio enabled. No sound is playing.”
+    button while sound is active, then move focus to a header navigation link.
+    Press R and confirm the curve does not reset under Workspace only scope.
+    Press S and confirm audio stops. Repeat S in an editable field and confirm
+    the letter is entered instead. Expected enabled-state meaning: “Audio
+    enabled. No sound is playing.”
 17. Review the curve-landmark list and confirm Voice over is unchecked beside Play. Check it, then activate Play. Confirm the initial and subsequently crossed extrema are spoken in English and match the listed coordinates. Check for duplicate browser and screen-reader speech. Untick Voice over if necessary. Use Hold, Stop all sound and Reset traversal; confirm queued browser speech stops and each state remains available as static text.
 18. Operate Position along curve with native range commands. Expected meaning at one quarter: “Position along curve, slider, 25 percent”, allowing product-specific phrasing.
 19. Use Step backwards and Step forwards. Confirm the announcement follows the selected detail level and does not move focus.
